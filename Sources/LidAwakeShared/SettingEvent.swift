@@ -2,13 +2,13 @@ import Foundation
 
 /// A factual observation made by the owner of a temporary setting, at the time of verification.
 public struct SettingEvent: Codable, Equatable {
-    public enum Setting: String, Codable { case brightness, powerMode }
-    public enum Source: String, Codable { case builtInDisplay, battery, ac, unknown }
+    public enum Setting: String, Codable { case brightness, powerMode, keyboardBrightness, outputMute }
+    public enum Source: String, Codable { case builtInDisplay, builtInKeyboard, audioOutput, battery, ac, unknown }
     public enum Operation: String, Codable { case apply, restore }
     public enum Outcome: String, Codable {
         case verified, alreadyAtTarget, externalChangePreserved, pending, failed
     }
-    public enum Key: String, Codable { case brightness, powermode, lowpowermode }
+    public enum Key: String, Codable { case brightness, keyboardBrightness, mute, powermode, lowpowermode }
 
     public let time: Date
     public let setting: Setting
@@ -44,14 +44,18 @@ public struct SettingEvent: Codable, Equatable {
         guard values.allSatisfy({ $0.isFinite }) else { return false }
         if outcome == .verified || outcome == .alreadyAtTarget {
             guard let current, let target, source != .unknown, key != nil,
-                  abs(current - target) <= (setting == .brightness ? 0.005 : 0) else { return false }
+                  abs(current - target) <= (setting == .brightness || setting == .keyboardBrightness ? 0.005 : 0) else { return false }
         }
         if key == nil, outcome != .pending && outcome != .failed { return false }
         switch setting {
         case .brightness:
             return source == .builtInDisplay && key == .brightness && values.allSatisfy { (0...1).contains($0) }
+        case .keyboardBrightness:
+            return source == .builtInKeyboard && key == .keyboardBrightness && values.allSatisfy { (0...1).contains($0) }
+        case .outputMute:
+            return source == .audioOutput && key == .mute && values.allSatisfy { $0 == 0 || $0 == 1 }
         case .powerMode:
-            return source != .builtInDisplay && key != .brightness && values.allSatisfy {
+            return [.battery, .ac, .unknown].contains(source) && (key == .powermode || key == .lowpowermode || key == nil) && values.allSatisfy {
                 $0.rounded() == $0 && (0...(key == .lowpowermode ? 1 : 2)).contains($0)
             }
         }

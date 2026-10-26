@@ -272,6 +272,10 @@ struct ContentView: View {
             SettingRow(title: "Low power when closed", isOn: $preferences.lowPowerWhenClosed) {
                 SwitchToggle(title: "Low power when closed", isOn: $preferences.lowPowerWhenClosed)
             }
+            SettingRow(title: "Mute when closed", isOn: $preferences.muteWhenClosed) {
+                SwitchToggle(title: "Mute when closed", isOn: $preferences.muteWhenClosed)
+            }
+            lockRow(minHeight: 24)
             SettingRow(title: "Stop when hot", isOn: $preferences.thermalProtectionEnabled) { thermalToggle }
             SettingRow(title: "Stop below battery %", isOn: $preferences.batteryLimitEnabled) {
                 batteryValue
@@ -279,7 +283,6 @@ struct ContentView: View {
             }
             .opacity(preferences.batteryLimitApplies ? 1 : 0.45)
             .disabled(!preferences.batteryLimitApplies)
-            lockRow(minHeight: 24)
             SettingRow(title: "Only while charging", isOn: $preferences.chargingOnlyEnabled) { chargingToggle }
             Divider().padding(.vertical, 4)
             launchRow
@@ -376,11 +379,6 @@ private struct ModeRow<Controls: View>: View {
                         }
                     }
                     Spacer(minLength: 0)
-                    if isSelected {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 12, weight: .semibold))
-                            .accessibilityHidden(true)
-                    }
                 }
                 .frame(maxWidth: .infinity, minHeight: 40)
                 .contentShape(Rectangle())

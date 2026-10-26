@@ -13,6 +13,7 @@ public final class SafetyPreferences: ObservableObject {
         public static let chargingOnlyEnabled = "chargingOnlyEnabled"
         public static let displayOffWhenClosed = "displayOffWhenClosed"
         public static let lowPowerWhenClosed = "lowPowerWhenClosed"
+        public static let muteWhenClosed = "muteWhenClosed"
         public static let lockOnLidCloseEnabled = "lockOnLidCloseEnabled"
         public static let idleSleepEnabled = "idleSleepEnabled"
         public static let idleSleepMinutes = "idleSleepMinutes"
@@ -47,6 +48,9 @@ public final class SafetyPreferences: ObservableObject {
     @Published public var lowPowerWhenClosed: Bool {
         didSet { save(lowPowerWhenClosed, Key.lowPowerWhenClosed) }
     }
+    @Published public var muteWhenClosed: Bool {
+        didSet { save(muteWhenClosed, Key.muteWhenClosed) }
+    }
     @Published public var idleSleepEnabled: Bool {
         didSet { save(idleSleepEnabled, Key.idleSleepEnabled) }
     }
@@ -79,6 +83,7 @@ public final class SafetyPreferences: ObservableObject {
             Key.chargingOnlyEnabled: false,
             Key.displayOffWhenClosed: true,
             Key.lowPowerWhenClosed: true,
+            Key.muteWhenClosed: false,
             Key.lockOnLidCloseEnabled: false,
             Key.idleSleepEnabled: false,
             Key.idleSleepMinutes: 20,
@@ -95,6 +100,7 @@ public final class SafetyPreferences: ObservableObject {
         chargingOnlyEnabled = defaults.bool(forKey: Key.chargingOnlyEnabled)
         displayOffWhenClosed = defaults.bool(forKey: Key.displayOffWhenClosed)
         lowPowerWhenClosed = defaults.bool(forKey: Key.lowPowerWhenClosed)
+        muteWhenClosed = defaults.bool(forKey: Key.muteWhenClosed)
         lockOnLidCloseEnabled = defaults.bool(forKey: Key.lockOnLidCloseEnabled)
         idleSleepEnabled = defaults.bool(forKey: Key.idleSleepEnabled)
         idleSleepMinutes = Self.clamp(defaults.integer(forKey: Key.idleSleepMinutes), to: SafetySettings.idleSleepRange)

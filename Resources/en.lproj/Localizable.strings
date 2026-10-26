@@ -49,6 +49,7 @@
 "Wake at" = "Wake at";
 "Every day, on power only" = "Every day, on power only";
 "Could not set the wake" = "Could not set the wake";
+"Mute when closed" = "Mute when closed";
 "Lock when closed" = "Lock when closed";
 "Screen lock is not available on this macOS version." = "Screen lock is not available on this macOS version.";
 "Launch at login" = "Launch at login";
@@ -157,6 +158,10 @@
 "Add Other App…" = "Add Other App…";
 "Done" = "Done";
 
+"Keyboard backlight brightness" = "Keyboard backlight brightness";
+"Audio output mute" = "Audio output mute";
+"Muted" = "Muted";
+"Unmuted" = "Unmuted";
 "Built-in display brightness" = "Built-in display brightness";
 
 "Battery power mode" = "Battery power mode";

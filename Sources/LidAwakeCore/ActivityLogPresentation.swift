@@ -112,6 +112,8 @@ public struct ActivityRow: Equatable {
         let title: String
         switch event.source {
         case .builtInDisplay: title = String(localized: "Built-in display brightness")
+        case .builtInKeyboard: title = String(localized: "Keyboard backlight brightness")
+        case .audioOutput: title = String(localized: "Audio output mute")
         case .battery: title = String(localized: "Battery power mode")
         case .ac: title = String(localized: "AC power mode")
         case .unknown: title = String(localized: "Power mode")
@@ -127,7 +129,8 @@ public struct ActivityRow: Equatable {
         }
         func value(_ number: Double?) -> String {
             guard let number else { return String(localized: "Unknown") }
-            if event.setting == .brightness { return String(localized: "\(Int((number * 100).rounded()))%") }
+            if event.setting == .brightness || event.setting == .keyboardBrightness { return String(localized: "\(Int((number * 100).rounded()))%") }
+            if event.setting == .outputMute { return number == 1 ? String(localized: "Muted") : String(localized: "Unmuted") }
             switch Int(number) {
             case 0: return event.key == .lowpowermode ? String(localized: "Off") : String(localized: "Automatic")
             case 1: return String(localized: "Low Power")

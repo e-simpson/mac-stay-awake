@@ -204,6 +204,16 @@ private final class FakeLidMonitor: LidMonitoring {
     }
 }
 
+@MainActor
+private final class FakeClosedLidSettings: ClosedLidSettingsControlling {
+    var calls: [(closed: Bool, mute: Bool, keyboard: Bool)] = []
+    var succeeds = true
+    func update(closed: Bool, mute: Bool, keyboard: Bool) -> Bool {
+        calls.append((closed, mute, keyboard))
+        return succeeds
+    }
+}
+
 private final class FakeScreenLocker: ScreenLocking {
     var isAvailable = true
     private(set) var lockCount = 0
@@ -273,6 +283,7 @@ final class ModeControllerTests: XCTestCase {
     private let powerMonitor = FakePowerSourceMonitor()
     private let lidMonitor = FakeLidMonitor()
     private let brightness = FakeBrightness()
+    private let closedLidSettings = FakeClosedLidSettings()
     private let power = FakePowerSource()
     private let locker = FakeScreenLocker()
     private let time = FakeTime()
@@ -310,11 +321,48 @@ final class ModeControllerTests: XCTestCase {
             idleEvents: idleEvents,
             settingEvents: settingEvents,
             brightness: brightness,
+            closedLidSettings: closedLidSettings,
             leaseSeconds: 120,
             renewalSleep: renewalSleep ?? { try await Task.sleep(nanoseconds: 3_600_000_000_000) },
             timerCheckSleep: { try await Task.sleep(nanoseconds: 3_600_000_000_000) },
             now: { time.now }
         )
+    }
+
+    func testClosedLidSettingsFollowLidPreferencesAndQuitRecovery() async throws {
+        preferences.muteWhenClosed = true
+        let controller = makeController()
+        try await controller.select(.lidClosed)
+        lidMonitor.change(closed: true)
+        await settle { self.closedLidSettings.calls.contains { $0.closed && $0.mute && $0.keyboard } }
+        XCTAssertTrue(closedLidSettings.calls.contains { $0.closed && $0.mute && $0.keyboard })
+        preferences.displayOffWhenClosed = false
+        await settle { self.closedLidSettings.calls.contains { $0.closed && $0.mute && !$0.keyboard } }
+        XCTAssertTrue(closedLidSettings.calls.contains { $0.closed && $0.mute && !$0.keyboard })
+        lidMonitor.change(closed: false)
+        await settle { self.closedLidSettings.calls.last?.closed == false }
+        XCTAssertFalse(closedLidSettings.calls.last?.closed ?? true)
+        closedLidSettings.succeeds = false
+        let pending = await controller.prepareToQuit()
+        XCTAssertFalse(pending)
+        XCTAssertNotNil(controller.message)
+        closedLidSettings.succeeds = true
+        let recovered = await controller.prepareToQuit()
+        XCTAssertTrue(recovered)
+    }
+
+    func testMuteRequiresKnownLidStateEvenWhenDisplayDimmingIsDisabled() async {
+        preferences.displayOffWhenClosed = false
+        preferences.muteWhenClosed = true
+        lidMonitor.isClosed = nil
+        let controller = makeController()
+        do {
+            try await controller.select(.lidClosed)
+            XCTFail("A session requiring lid-triggered mute must not start without the lid state")
+        } catch {}
+        XCTAssertEqual(controller.mode, .off)
+        XCTAssertFalse(closedLidSettings.calls.contains { $0.closed })
+        XCTAssertTrue(sessions.calls.contains("end"))
     }
 
     func testSuspendedSettingFetchCannotDelayRecoveryOrModeTransitions() async throws {

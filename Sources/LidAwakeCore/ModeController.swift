@@ -37,6 +37,7 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
     private let idleEvents: IdleEventFetching
     private let settingEvents: SettingEventFetching
     private let brightness: DisplayBrightnessControlling
+    private let closedLidSettings: ClosedLidSettingsControlling
     private var helperRecoveryNeeded: Bool {
         get { preferences.helperRecoveryPending }
         set { preferences.helperRecoveryPending = newValue }
@@ -69,6 +70,7 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
         idleEvents: IdleEventFetching = NoIdleEvents(),
         settingEvents: SettingEventFetching = NoSettingEvents(),
         brightness: DisplayBrightnessControlling,
+        closedLidSettings: ClosedLidSettingsControlling = NoClosedLidSettings(),
         leaseSeconds: Int = 120,
         renewalSleep: @escaping () async throws -> Void = { try await Task.sleep(nanoseconds: 30_000_000_000) },
         timerCheckSleep: @escaping () async throws -> Void = { try await Task.sleep(nanoseconds: 5_000_000_000) },
@@ -88,6 +90,7 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
         self.idleEvents = idleEvents
         self.settingEvents = settingEvents
         self.brightness = brightness
+        self.closedLidSettings = closedLidSettings
         self.leaseSeconds = leaseSeconds
         self.renewalSleep = renewalSleep
         self.timerCheckSleep = timerCheckSleep
@@ -137,6 +140,10 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
         let display = brightness.restore()
         if display == .pending || display == .unavailable {
             showFailure("Waiting for the built-in display to restore brightness before quitting.")
+            recovered = false
+        }
+        if !closedLidSettings.update(closed: false, mute: false, keyboard: false) {
+            showFailure("Waiting for closed-lid settings to be restored before quitting.")
             recovered = false
         }
         if await helper.isReady() {
@@ -309,6 +316,7 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
                         message = .failed("Power recovery pending: \(error.localizedDescription)")
                     }
                     _ = brightness.restore()
+                    _ = closedLidSettings.update(closed: false, mute: false, keyboard: false)
                     if stopRequested {
                         await leaveCurrentMode()
                         mode = .off
@@ -471,8 +479,14 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
     private func syncBrightness(active: Bool) throws {
         let displayActive = active && preferences.displayOffWhenClosed
         let lidState = lidMonitor.isClosed
-        if displayActive && lidState == nil { throw brightnessError("The lid state could not be read.") }
+        if active && lidState == nil && (preferences.displayOffWhenClosed || preferences.muteWhenClosed) {
+            throw brightnessError("The lid state could not be read.")
+        }
         let closed = lidState == true
+        if !closedLidSettings.update(closed: active && closed, mute: preferences.muteWhenClosed,
+                                     keyboard: preferences.displayOffWhenClosed) {
+            showFailure("A closed-lid audio or keyboard setting could not be applied or restored.")
+        }
         let result: DisplayBrightnessResult
         if displayActive && closed {
             result = brightness.close()
@@ -663,6 +677,9 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
             activity.end()
         }
         let restored = brightness.restore()
+        if !closedLidSettings.update(closed: false, mute: false, keyboard: false) {
+            showFailure("Closed-lid audio or keyboard recovery is pending.")
+        }
         if restored == .pending || restored == .unavailable {
             showFailure("Display brightness recovery is pending until the built-in display is available.")
         }

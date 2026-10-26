@@ -19,6 +19,8 @@ Daily alarms use a validated maximum-16 array of local minutes, introduced in pr
 
 Selecting a duration explicitly resets the active countdown, even for the same choice; Infinite removes the timer. Protocol 17 resets only an active session’s timer and monotonic origin, preserving its lease and power state. Expired sessions cannot be restarted by changing the duration. Other settings retain the original countdown. In Normal, choosing a duration only saves the next session’s setting.
 
+Mute applies to the default audio output and tracks it by its stable Core Audio device UID. The display-off option also dims the built-in keyboard backlight through macOS's private CoreBrightness interface when available. Each original value is saved before it is changed and restored on open, stop, quit, or the next launch after interruption; observable external changes are preserved. A disconnected device can leave recovery pending until it reconnects. Unsupported controls report an error rather than inventing an original value.
+
 ## Operating limits
 
 Brightness zero does not guarantee that the display panel is physically powered off. Brightness uses private DisplayServices APIs and unavailable panels defer restoration. Low Power Mode can reduce performance. Thermal-pressure protection does not guarantee safe operation in an enclosed bag. Legacy energy settings are refused when their original state cannot be restored safely. Avoid competing sleep-override utilities.

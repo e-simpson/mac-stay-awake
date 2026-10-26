@@ -13,13 +13,13 @@
 
 <p align="center">
   <img src="./images/normal-light.png" width="320" alt="Normal mode with compact settings and a duration picker" />
-  <img src="./images/keep-alive-dark.png" width="320" alt="Stay Awake with countdown, charging status, and nominal thermals" />
+  <img src="./images/keep-alive-dark.png" width="320" alt="Stay Awake with countdown, battery status, and nominal thermals" />
 </p>
 
 ### Features
 
 - Keep working with the lid closed, on battery or external power
-- Dim the screen when closed, Low Power Mode when closed
+- Dim the display and keyboard, mute audio, or enable Low Power Mode when closed
 - Set a timer or run indefinitely, with battery and thermal cutoffs
 - Automate with daily wake-ups and app watching
   - Watch app activity to end idle sessions

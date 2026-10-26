@@ -15,6 +15,17 @@ final class ActivityRowTests: XCTestCase {
 
     // MARK: Events
 
+    func testKeyboardAndMuteLogRowsUseTheirOwnLabelsAndValues() {
+        let keyboard = SettingEvent(time: time, setting: .keyboardBrightness, source: .builtInKeyboard,
+            operation: .apply, outcome: .verified, key: .keyboardBrightness, prior: 0.7, current: 0, target: 0)
+        let sound = SettingEvent(time: time, setting: .outputMute, source: .audioOutput,
+            operation: .apply, outcome: .verified, key: .mute, prior: 0, current: 1, target: 1)
+        XCTAssertEqual(row(.setting(keyboard)).title, "Keyboard backlight brightness")
+        XCTAssertTrue(row(.setting(keyboard)).detail?.contains("Previous: 70% · Current: 0%") == true)
+        XCTAssertEqual(row(.setting(sound)).title, "Audio output mute")
+        XCTAssertTrue(row(.setting(sound)).detail?.contains("Previous: Unmuted · Current: Muted") == true)
+    }
+
     func testModeOn() {
         XCTAssertEqual(
             row(.modeOn(.lidClosed)),

@@ -3,6 +3,19 @@ import XCTest
 @testable import LidAwakeShared
 
 final class SettingEventTests: XCTestCase {
+    func testKeyboardAndMuteObservationsRejectMismatchedDevicesAndValues() {
+        let keyboard = SettingEvent(time: Date(), setting: .keyboardBrightness, source: .builtInKeyboard,
+            operation: .apply, outcome: .verified, key: .keyboardBrightness, prior: 0.7, current: 0, target: 0)
+        let sound = SettingEvent(time: Date(), setting: .outputMute, source: .audioOutput,
+            operation: .restore, outcome: .verified, key: .mute, prior: 1, current: 0, target: 0)
+        XCTAssertEqual(SettingEventWire.decode(SettingEventWire.encode([keyboard, sound])), [keyboard, sound])
+        let wrongDevice = SettingEvent(time: Date(), setting: .outputMute, source: .battery,
+            operation: .apply, outcome: .verified, key: .mute, current: 1, target: 1)
+        let wrongValue = SettingEvent(time: Date(), setting: .outputMute, source: .audioOutput,
+            operation: .apply, outcome: .verified, key: .mute, current: 0.5, target: 0.5)
+        XCTAssertFalse(wrongDevice.isValid)
+        XCTAssertFalse(wrongValue.isValid)
+    }
     func testTransportRoundTripAndRejectsInvalidOrUnboundedPayloads() throws {
         let event = SettingEvent(time: Date(timeIntervalSince1970: 1234), setting: .powerMode,
             source: .battery, operation: .restore, outcome: .verified, key: .powermode,

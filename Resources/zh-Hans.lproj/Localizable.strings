@@ -49,6 +49,7 @@
 "Wake at" = "唤醒时间";
 "Every day, on power only" = "每天，仅在接通电源时";
 "Could not set the wake" = "无法设置唤醒";
+"Mute when closed" = "合盖时静音";
 "Lock when closed" = "合盖时锁定屏幕";
 "Screen lock is not available on this macOS version." = "当前 macOS 版本不支持此锁屏功能。";
 "Launch at login" = "登录时启动";
@@ -157,6 +158,10 @@
 "Add Other App…" = "添加其他应用…";
 "Done" = "完成";
 
+"Keyboard backlight brightness" = "键盘背光亮度";
+"Audio output mute" = "音频输出静音";
+"Muted" = "静音";
+"Unmuted" = "未静音";
 "Built-in display brightness" = "内置显示屏亮度";
 
 "Battery power mode" = "电池电源模式";

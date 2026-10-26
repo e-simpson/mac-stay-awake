@@ -35,10 +35,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if PERSONAL_PREVIEW
         let displayAssertion: PowerAssertion = PreviewPowerAssertion()
         let brightness: DisplayBrightnessControlling = PreviewBrightness()
+        let closedLidSettings: ClosedLidSettingsControlling = NoClosedLidSettings()
         let settingEvents: SettingEventFetching = NoSettingEvents()
         #else
         let displayAssertion: PowerAssertion = DisplaySleepAssertion()
         let brightness: DisplayBrightnessControlling = DisplayBrightness(activityLog: activityLog)
+        let closedLidSettings: ClosedLidSettingsControlling = ClosedLidSettings(activityLog: activityLog)
         let settingEvents: SettingEventFetching = XPCHelperConnection()
         #endif
         let controller = ModeController(
@@ -50,7 +52,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             activityLog: activityLog,
             idleEvents: XPCHelperConnection(),
             settingEvents: settingEvents,
-            brightness: brightness
+            brightness: brightness,
+            closedLidSettings: closedLidSettings
         )
         let scheduler = WakeScheduler(
             preferences: WakePreferences(),
