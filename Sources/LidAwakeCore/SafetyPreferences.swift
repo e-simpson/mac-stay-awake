@@ -83,7 +83,7 @@ public final class SafetyPreferences: ObservableObject {
             Key.chargingOnlyEnabled: false,
             Key.displayOffWhenClosed: true,
             Key.lowPowerWhenClosed: true,
-            Key.muteWhenClosed: false,
+            Key.muteWhenClosed: true,
             Key.lockOnLidCloseEnabled: false,
             Key.idleSleepEnabled: false,
             Key.idleSleepMinutes: 20,

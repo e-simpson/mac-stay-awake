@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./images/icon.png" width="96" alt="MacStayAwake icon: an open purple ring with a lightning bolt" />
+  <img src="./images/icon.png" width="96" alt="MacStayAwake icon: a purple half-open eye and sparkle" />
 </p>
 <h3 align="center">MacStayAwake</h3>
 <p align="center">A native mac app to keep your Mac working with the lid closed.</p>

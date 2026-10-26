@@ -18,6 +18,13 @@ final class SafetyPreferencesTests: XCTestCase {
         super.tearDown()
     }
 
+    func testMuteDefaultsOnAndPreservesAnExplicitOffChoice() {
+        let preferences = SafetyPreferences(defaults: defaults)
+        XCTAssertTrue(preferences.muteWhenClosed)
+        preferences.muteWhenClosed = false
+        XCTAssertFalse(SafetyPreferences(defaults: defaults).muteWhenClosed)
+    }
+
     func testExplicitTimerSelectionPersistsWithoutRenewalAndKeepsLastFiniteChoice() {
         let preferences = SafetyPreferences(defaults: defaults)
         var fired = 0
