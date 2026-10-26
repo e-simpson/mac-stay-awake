@@ -12,6 +12,7 @@ enum ModeIcon {
     static let gridSize: CGFloat = 24
     static let strokeStyle = StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round)
     static let awakeColor = NSColor(srgbRed: 0.62745, green: 0.51765, blue: 0.90980, alpha: 1)
+    static let awakeSymbol = NSImage(systemSymbolName: "eye.half.closed", accessibilityDescription: "Stay Awake")
 
     static func glyph(for mode: Mode) -> Glyph {
         switch mode {
@@ -29,6 +30,14 @@ enum ModeIcon {
     private static let menuBarImages = Dictionary(uniqueKeysWithValues: Mode.allCases.map { ($0, image(for: $0, size: 18)) })
 
     private static func image(for mode: Mode, size: CGFloat) -> NSImage {
+        if mode == .lidClosed,
+           let image = awakeSymbol?.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [awakeColor])) {
+            let scale = size / max(image.size.width, image.size.height)
+            image.size = NSSize(width: image.size.width * scale, height: image.size.height * scale)
+            image.isTemplate = false
+            image.accessibilityDescription = "Stay Awake"
+            return image
+        }
         let glyph = glyph(for: mode)
         let image = NSImage(size: NSSize(width: size, height: size), flipped: true) { rect in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
@@ -101,11 +110,22 @@ struct ModeIconView: View {
     let mode: Mode
 
     var body: some View {
-        Canvas { context, size in
-            let glyph = ModeIcon.glyph(for: mode)
-            context.scaleBy(x: size.width / ModeIcon.gridSize, y: size.height / ModeIcon.gridSize)
-            context.fill(Path(glyph.filled), with: .foreground)
-            context.stroke(Path(glyph.stroked), with: .foreground, style: ModeIcon.strokeStyle)
+        Group {
+            if mode == .lidClosed, let symbol = ModeIcon.awakeSymbol {
+                Image(nsImage: symbol)
+                    .resizable()
+                    .renderingMode(.template)
+                    .aspectRatio(contentMode: .fit)
+                    .foregroundStyle(Color(nsColor: ModeIcon.awakeColor))
+            } else {
+                Canvas { context, size in
+                    let glyph = ModeIcon.glyph(for: mode)
+                    let style: GraphicsContext.Shading = mode == .lidClosed ? .color(Color(nsColor: ModeIcon.awakeColor)) : .foreground
+                    context.scaleBy(x: size.width / ModeIcon.gridSize, y: size.height / ModeIcon.gridSize)
+                    context.fill(Path(glyph.filled), with: style)
+                    context.stroke(Path(glyph.stroked), with: style, style: ModeIcon.strokeStyle)
+                }
+            }
         }
         .accessibilityHidden(true)
     }

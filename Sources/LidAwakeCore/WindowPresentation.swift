@@ -36,8 +36,7 @@ public enum StatusLine {
     /// The active mode subtitle; nil when there is nothing to show.
     public static func text(mode: Mode, isPaused: Bool, timerRemaining: TimeInterval?, battery: BatteryLevel, powerSource: PowerSource, thermal: ThermalState?) -> String? {
         let timer = timerRemaining.map { seconds in
-            let minutes = max(0, Int((seconds / 60).rounded(.up)))
-            return String(localized: "\(minutes / 60)h \(minutes % 60)m left")
+            String(localized: "\(DurationFormat.clock(Int(seconds.rounded(.up)))) left")
         }
         switch mode {
         case .off:
@@ -273,6 +272,13 @@ public struct WindowMessage: Equatable, Identifiable {
 }
 
 public enum DurationFormat {
+    /// Hours and two-digit minutes, rounded up to the next whole minute.
+    public static func clock(_ seconds: Int) -> String {
+        let seconds = max(0, seconds)
+        let minutes = seconds / 60 + (seconds % 60 == 0 ? 0 : 1)
+        return String(format: "%ld:%02ld", minutes / 60, minutes % 60)
+    }
+
     /// Whole minutes, rounded up: "45 min", "2 h", "1 h 20 min".
     public static func remaining(_ seconds: Int) -> String {
         let minutes = (seconds + 59) / 60

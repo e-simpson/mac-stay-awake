@@ -50,6 +50,7 @@ public struct NoSettingEvents: SettingEventFetching {
 public protocol LidSessionService {
     func startSession(leaseSeconds: Int, safety: SafetySettings) async throws
     func renewSession(leaseSeconds: Int, safety: SafetySettings) async throws
+    func resetSessionTimer(timerSeconds: Int) async throws -> TimeInterval
     func endSession() async throws
     func clearLeftover() async throws
     func sessionStatus() async throws -> HelperSessionStatus
@@ -176,6 +177,19 @@ public struct XPCHelperConnection: HelperConnecting, LidSessionService, IdleStat
                 watchedAppPaths: safety.watchedAppPaths,
                 lowPowerWhenClosed: safety.lowPowerWhenClosed
             ) { done(Self.result($0, $1)) }
+        }
+    }
+
+    public func resetSessionTimer(timerSeconds: Int) async throws -> TimeInterval {
+        try await call(timeout: sessionTimeout) { helper, done in
+            helper.resetSessionTimer(timerSeconds: timerSeconds) { code, message, origin in
+                done(Self.result(code, message).flatMap {
+                    guard origin.isFinite, origin >= 0 else {
+                        return .failure(HelperError.connection(String(localized: "Unexpected helper reply.")))
+                    }
+                    return .success(origin)
+                })
+            }
         }
     }
 

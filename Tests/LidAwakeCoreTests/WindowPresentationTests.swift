@@ -19,14 +19,14 @@ final class StatusLineTests: XCTestCase {
     func testKeepScreenOnWithTimer() {
         XCTAssertEqual(
             StatusLine.text(mode: .keepScreenOn, isPaused: false, timerRemaining: eightyMinutes, battery: .percent(82), powerSource: .battery, thermal: .nominal),
-            "1h 20m left"
+            "1:20 left"
         )
     }
 
     func testLidClosedWithTimer() {
         XCTAssertEqual(
             StatusLine.text(mode: .lidClosed, isPaused: false, timerRemaining: eightyMinutes, battery: .percent(82), powerSource: .battery, thermal: .nominal),
-            "1h 20m left · Battery 82% · Nominal thermals"
+            "1:20 left · Battery 82% · Nominal thermals"
         )
     }
 
@@ -47,7 +47,7 @@ final class StatusLineTests: XCTestCase {
     func testUnreadableBattery() {
         XCTAssertEqual(
             StatusLine.text(mode: .lidClosed, isPaused: false, timerRemaining: eightyMinutes, battery: .unknown, powerSource: .battery, thermal: .nominal),
-            "1h 20m left · Battery unknown · Nominal thermals"
+            "1:20 left · Battery unknown · Nominal thermals"
         )
         XCTAssertEqual(
             StatusLine.text(mode: .lidClosed, isPaused: false, timerRemaining: nil, battery: .unknown, powerSource: .battery, thermal: .nominal),
@@ -58,7 +58,7 @@ final class StatusLineTests: XCTestCase {
     func testMacWithoutBattery() {
         XCTAssertEqual(
             StatusLine.text(mode: .lidClosed, isPaused: false, timerRemaining: eightyMinutes, battery: .none, powerSource: .battery, thermal: .nominal),
-            "1h 20m left · Nominal thermals"
+            "1:20 left · Nominal thermals"
         )
         XCTAssertEqual(StatusLine.text(mode: .lidClosed, isPaused: false, timerRemaining: nil, battery: .none, powerSource: .battery, thermal: .nominal), "Nominal thermals")
     }
@@ -66,7 +66,7 @@ final class StatusLineTests: XCTestCase {
     func testDisabledStatusFieldsAreOmitted() {
         XCTAssertEqual(
             StatusLine.text(mode: .lidClosed, isPaused: false, timerRemaining: eightyMinutes, battery: .percent(82), powerSource: .battery, thermal: nil),
-            "1h 20m left · Battery 82%"
+            "1:20 left · Battery 82%"
         )
         XCTAssertNil(StatusLine.text(mode: .lidClosed, isPaused: false, timerRemaining: nil, battery: .none, powerSource: .battery, thermal: nil))
         XCTAssertEqual(
@@ -86,7 +86,7 @@ final class StatusLineTests: XCTestCase {
     }
 
     func testCompactCountdownRoundsUpToMinutes() {
-        for (seconds, expected) in [(1.0, "0h 1m left"), (7200, "2h 0m left"), (4741, "1h 20m left")] {
+        for (seconds, expected) in [(0.0, "0:00 left"), (1, "0:01 left"), (60, "0:01 left"), (61, "0:02 left"), (3540, "0:59 left"), (3541, "1:00 left"), (7200, "2:00 left"), (4741, "1:20 left"), (86400, "24:00 left")] {
             XCTAssertEqual(
                 StatusLine.text(mode: .lidClosed, isPaused: false, timerRemaining: seconds, battery: .none, powerSource: .battery, thermal: nil),
                 expected

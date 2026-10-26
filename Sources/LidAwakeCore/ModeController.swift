@@ -158,6 +158,66 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
         try await select(newMode, bySchedule: false)
     }
 
+    /// An explicit choice starts a fresh countdown, including when the value is unchanged.
+    public func selectTimer(seconds: Int) async throws {
+        guard seconds == 0 || SafetySettings.timerRange.contains(seconds) else {
+            let error = HelperError.helper(.invalidArgument, "The timer must be off or between 60 and 86400 seconds.")
+            showFailure(error.localizedDescription)
+            throw error
+        }
+        while isBusy { await withCheckedContinuation { idleWaiters.append($0) } }
+        guard !isQuitting else { return }
+        // An expired local timer must stop before a new preference can be saved for a future session.
+        if mode == .keepScreenOn, let remaining = timerRemaining(), remaining <= 0 {
+            await checkTimer()
+        }
+        isBusy = true
+        stopRequested = false
+        defer { isBusy = false }
+        switch mode {
+        case .off:
+            preferences.selectTimer(seconds: seconds)
+        case .keepScreenOn:
+            preferences.selectTimer(seconds: seconds)
+            modeStartedAt = now()
+        case .lidClosed:
+            do {
+                let origin = try await sessions.resetSessionTimer(timerSeconds: seconds)
+                if stopRequested || isQuitting {
+                    await leaveCurrentMode()
+                    mode = .off
+                    recordTurnedOffByUser(.lidClosed)
+                    modeEnded(.lidClosed)
+                    return
+                }
+                guard origin.isFinite, origin >= 0, origin <= now() else {
+                    throw HelperError.connection(String(localized: "Unexpected helper reply."))
+                }
+                preferences.selectTimer(seconds: seconds)
+                modeStartedAt = origin
+            } catch {
+                await leaveCurrentMode()
+                mode = .off
+                if stopRequested || isQuitting {
+                    recordTurnedOffByUser(.lidClosed)
+                    modeEnded(.lidClosed)
+                    return
+                }
+                if case HelperError.helper(.noSession, _) = error,
+                   await reportStopReason(mode: .lidClosed) { throw error }
+                let detail = error.localizedDescription
+                if case .failed(let recovery)? = message {
+                    message = .failed("\(detail) Recovery pending: \(recovery)")
+                } else {
+                    message = .turnedOffWithError(detail)
+                }
+                activityLog.record(.modeOff(.lidClosed, .error(detail)))
+                modeEnded(.lidClosed)
+                throw error
+            }
+        }
+    }
+
     /// Stay Awake with Sleep when idle for this session, only from Off and only on power.
     /// Called after the Mac woke on schedule.
     public func turnOnBySchedule() async {

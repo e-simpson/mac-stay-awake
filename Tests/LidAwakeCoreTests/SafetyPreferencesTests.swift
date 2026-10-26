@@ -18,6 +18,25 @@ final class SafetyPreferencesTests: XCTestCase {
         super.tearDown()
     }
 
+    func testExplicitTimerSelectionPersistsWithoutRenewalAndKeepsLastFiniteChoice() {
+        let preferences = SafetyPreferences(defaults: defaults)
+        var fired = 0
+        let subscription = preferences.changes.sink { fired += 1 }
+        preferences.selectTimer(seconds: 1800)
+        preferences.selectTimer(seconds: 1800)
+        XCTAssertEqual(preferences.timerLimit, 1800)
+        preferences.selectTimer(seconds: 0)
+        XCTAssertNil(preferences.timerLimit)
+        XCTAssertEqual(preferences.timerSeconds, 1800)
+        XCTAssertEqual(fired, 0)
+        let reloaded = SafetyPreferences(defaults: defaults)
+        XCTAssertFalse(reloaded.timerEnabled)
+        XCTAssertEqual(reloaded.timerSeconds, 1800)
+        preferences.batteryLimitPercent = 30
+        XCTAssertEqual(fired, 1, "Ordinary setting notifications remain enabled")
+        withExtendedLifetime(subscription) {}
+    }
+
     func testValuesBelowRangeReadAsLowest() {
         defaults.set(0, forKey: SafetyPreferences.Key.timerSeconds)
         defaults.set(-5, forKey: SafetyPreferences.Key.batteryLimitPercent)

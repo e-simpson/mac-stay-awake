@@ -17,6 +17,8 @@ Quit is a serialized recovery operation, including while Normal is selected. A u
 Daily alarms use a validated maximum-16 array of local minutes, introduced in protocol 15. Legacy single-alarm preferences migrate on edit. One serialized synchronization loop coalesces changes and retains confirmed OS events until success. The helper keeps the next two owned occurrences per enabled time, deduplicates DST collisions, preserves already-owned imminent enabled events, and avoids cancelling the prior schedule after failed additions. Events belonging to other apps are never cancelled. An hourly app timer replenishes the horizon; quitting leaves queued alarms intact.
 
 
+Selecting a duration explicitly resets the active countdown, even for the same choice; Infinite removes the timer. Protocol 17 resets only an active session’s timer and monotonic origin, preserving its lease and power state. Expired sessions cannot be restarted by changing the duration. Other settings retain the original countdown. In Normal, choosing a duration only saves the next session’s setting.
+
 ## Operating limits
 
 Brightness zero does not guarantee that the display panel is physically powered off. Brightness uses private DisplayServices APIs and unavailable panels defer restoration. Low Power Mode can reduce performance. Thermal-pressure protection does not guarantee safe operation in an enclosed bag. Legacy energy settings are refused when their original state cannot be restored safely. Avoid competing sleep-override utilities.

@@ -159,6 +159,15 @@ public final class SafetyPreferences: ObservableObject {
         idleSleepEnabled = false
     }
 
+    /// Explicit timer selection is acknowledged separately, so it must not trigger renewal.
+    /// Zero disables the timer and keeps the last finite choice for later.
+    func selectTimer(seconds: Int) {
+        sendsChanges = false
+        defer { sendsChanges = true }
+        if seconds > 0 { timerSeconds = seconds }
+        timerEnabled = seconds != 0
+    }
+
     /// A stored value the helper would reject is read as the nearest one it accepts.
     static func clamp(_ value: Int, to range: ClosedRange<Int>) -> Int {
         min(max(value, range.lowerBound), range.upperBound)

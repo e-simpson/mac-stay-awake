@@ -39,6 +39,9 @@ private final class FakeHelper: HelperPreparing {
 
 @MainActor
 private final class FakeSessions: LidSessionService {
+    var timerResetError: Error?
+    var timerResetOrigin: TimeInterval = 1000
+    var onTimerReset: (() async -> Void)?
     var startError: Error?
     var onStart: (() async -> Void)?
     var renewError: Error?
@@ -66,6 +69,13 @@ private final class FakeSessions: LidSessionService {
         await onRenew?()
         self.safety.append(safety)
         if let renewError { throw renewError }
+    }
+
+    func resetSessionTimer(timerSeconds: Int) async throws -> TimeInterval {
+        calls.append("reset timer \(timerSeconds)")
+        await onTimerReset?()
+        if let timerResetError { throw timerResetError }
+        return timerResetOrigin
     }
 
     /// Read when the session ends, to see what was true at that moment.
@@ -1073,6 +1083,196 @@ final class ModeControllerTests: XCTestCase {
             SafetySettings(timerSeconds: 3600, batteryLimitPercent: 20, thermalProtection: true),
             SafetySettings(timerSeconds: 3600, batteryLimitPercent: 20, thermalProtection: true),
         ])
+    }
+
+    func testInactiveTimerSelectionOnlySavesPreferenceAndRejectsInvalidValues() async throws {
+        let controller = makeController()
+        try await controller.selectTimer(seconds: 1800)
+        try await controller.selectTimer(seconds: 0)
+        XCTAssertEqual(controller.mode, .off)
+        XCTAssertNil(controller.modeStartedAt)
+        XCTAssertFalse(preferences.timerEnabled)
+        XCTAssertEqual(preferences.timerSeconds, 1800)
+        for seconds in [-1, 59, 86401] {
+            do { try await controller.selectTimer(seconds: seconds); XCTFail("Invalid timer must fail") } catch {}
+        }
+        XCTAssertNotNil(controller.message)
+        XCTAssertEqual(sessions.calls, [])
+        XCTAssertEqual(preferences.timerSeconds, 1800)
+    }
+
+    func testExplicitScreenTimerSelectionRestartsEvenSameValueAndInfinitePreservesFinite() async throws {
+        preferences.selectTimer(seconds: 7200)
+        let controller = makeController()
+        try await controller.select(.keepScreenOn)
+        time.now += 2000
+        try await controller.selectTimer(seconds: 1800)
+        XCTAssertEqual(controller.timerRemaining(), 1800)
+        time.now += 30
+        try await controller.selectTimer(seconds: 1800)
+        XCTAssertEqual(controller.timerRemaining(), 1800)
+        XCTAssertEqual(controller.modeStartedAt, time.now)
+        try await controller.selectTimer(seconds: 0)
+        XCTAssertNil(controller.timerRemaining())
+        XCTAssertEqual(preferences.timerSeconds, 1800)
+        XCTAssertEqual(controller.mode, .keepScreenOn)
+        XCTAssertEqual(sessions.calls, [])
+        XCTAssertEqual(log.events, [.modeOn(.keepScreenOn)])
+    }
+
+    func testExpiredScreenTimerCannotBeResurrectedBySelection() async throws {
+        preferences.selectTimer(seconds: 60)
+        let controller = makeController()
+        try await controller.select(.keepScreenOn)
+        time.now += 60
+        try await controller.selectTimer(seconds: 3600)
+        XCTAssertEqual(controller.mode, .off)
+        XCTAssertFalse(assertion.isHeld)
+        XCTAssertEqual(preferences.timerLimit, 3600)
+        XCTAssertNil(controller.modeStartedAt)
+        XCTAssertEqual(log.events.last, .modeOff(.keepScreenOn, .stopped(.timer, timerSeconds: 60)))
+    }
+
+    func testHelperTimerUsesAcknowledgedOriginAndNeverRenewsOrStartsAnotherSession() async throws {
+        preferences.selectTimer(seconds: 7200)
+        let controller = makeController()
+        try await controller.select(.lidClosed)
+        time.now += 2000
+        sessions.timerResetOrigin = time.now - 3
+        try await controller.selectTimer(seconds: 1800)
+        XCTAssertEqual(controller.timerRemaining(), 1797)
+        XCTAssertEqual(controller.modeStartedAt, sessions.timerResetOrigin)
+        time.now += 20
+        sessions.timerResetOrigin = time.now
+        try await controller.selectTimer(seconds: 1800)
+        XCTAssertEqual(controller.timerRemaining(), 1800)
+        try await controller.selectTimer(seconds: 0)
+        XCTAssertNil(controller.timerRemaining())
+        XCTAssertEqual(preferences.timerSeconds, 1800)
+        for _ in 0..<3 { await Task.yield() }
+        XCTAssertEqual(sessions.calls, ["start 120", "reset timer 1800", "reset timer 1800", "reset timer 0"])
+        XCTAssertEqual(controller.mode, .lidClosed)
+        XCTAssertTrue(activity.isActive)
+        XCTAssertEqual(log.events, [.modeOn(.lidClosed)])
+    }
+
+    func testNormalAndQuitWinAgainstSuspendedTimerReset() async throws {
+        for quitting in [false, true] {
+            preferences.selectTimer(seconds: 7200)
+            let controller = makeController()
+            try await controller.select(.lidClosed)
+            var resume: CheckedContinuation<Void, Never>?
+            sessions.onTimerReset = { await withCheckedContinuation { resume = $0 } }
+            sessions.timerResetOrigin = .greatestFiniteMagnitude
+            let resetting = Task { try await controller.selectTimer(seconds: 1800) }
+            await settle { resume != nil }
+            let stopping = Task {
+                if quitting { return await controller.prepareToQuit() }
+                try await controller.select(.off)
+                return true
+            }
+            for _ in 0..<3 { await Task.yield() }
+            resume?.resume()
+            try await resetting.value
+            let stopped = try await stopping.value
+            XCTAssertTrue(stopped)
+            XCTAssertEqual(controller.mode, .off)
+            XCTAssertNil(controller.modeStartedAt)
+            XCTAssertFalse(controller.isBusy)
+            XCTAssertEqual(preferences.timerSeconds, 7200, "A canceled selection must not adopt the late reply")
+            XCTAssertFalse(activity.isActive)
+            sessions.onTimerReset = nil
+        }
+    }
+
+    func testQueuedTimerResetAndConcurrentSettingChangeUseAcceptedTimerAndOrigin() async throws {
+        preferences.selectTimer(seconds: 7200)
+        let controller = makeController()
+        try await controller.select(.lidClosed)
+        time.now += 20
+        var resumeRenewal: CheckedContinuation<Void, Never>?
+        var resumeReset: CheckedContinuation<Void, Never>?
+        sessions.onRenew = { await withCheckedContinuation { resumeRenewal = $0 } }
+        sessions.onTimerReset = { await withCheckedContinuation { resumeReset = $0 } }
+        let renewal = Task { await controller.renew() }
+        await settle { resumeRenewal != nil }
+        let resetting = Task { try await controller.selectTimer(seconds: 1800) }
+        for _ in 0..<3 { await Task.yield() }
+        XCTAssertEqual(sessions.calls, ["start 120", "renew 120"], "Timer selection must wait for the renewal")
+        resumeRenewal?.resume()
+        await renewal.value
+        sessions.onRenew = nil
+        await settle { resumeReset != nil }
+        XCTAssertNotNil(resumeReset)
+        preferences.batteryLimitPercent = 30
+        sessions.timerResetOrigin = time.now - 2
+        for _ in 0..<3 { await Task.yield() }
+        XCTAssertEqual(sessions.calls, ["start 120", "renew 120", "reset timer 1800"])
+        resumeReset?.resume()
+        try await resetting.value
+        await settle { sessions.calls.count == 4 && !controller.isBusy }
+        XCTAssertEqual(sessions.calls, ["start 120", "renew 120", "reset timer 1800", "renew 120"])
+        XCTAssertEqual(sessions.safety.last?.timerSeconds, 1800)
+        XCTAssertEqual(sessions.safety.last?.batteryLimitPercent, 30)
+        XCTAssertEqual(controller.modeStartedAt, sessions.timerResetOrigin)
+        XCTAssertEqual(controller.timerRemaining(), 1798)
+        XCTAssertEqual(controller.mode, .lidClosed)
+    }
+
+    func testInvalidHelperTimerOriginsRecoverWithoutAdoptingOrStartingAnotherSession() async throws {
+        preferences.selectTimer(seconds: 7200)
+        let controller = makeController()
+        for origin in [time.now + 1, Double.greatestFiniteMagnitude, .infinity, .nan, -1] {
+            let callCount = sessions.calls.count
+            try await controller.select(.lidClosed)
+            sessions.timerResetOrigin = origin
+            let restores = brightness.restores
+            do { try await controller.selectTimer(seconds: 1800); XCTFail("Invalid timer origin must fail: \(origin)") } catch {}
+            XCTAssertEqual(controller.mode, .off)
+            XCTAssertNil(controller.modeStartedAt)
+            XCTAssertGreaterThan(brightness.restores, restores)
+            XCTAssertEqual(preferences.timerSeconds, 7200)
+            XCTAssertNotNil(controller.message)
+            XCTAssertFalse(activity.isActive)
+            XCTAssertEqual(Array(sessions.calls.dropFirst(callCount)), ["start 120", "reset timer 1800", "end"])
+        }
+    }
+
+    func testTimerResetFailureRecoversWithoutStartingAndKeepsPreviousPreference() async throws {
+        preferences.selectTimer(seconds: 7200)
+        let controller = makeController()
+        try await controller.select(.lidClosed)
+        sessions.timerResetError = HelperError.timeout
+        sessions.endError = HelperError.helper(.powerModeFailed, "Power recovery pending")
+        let restores = brightness.restores
+        do { try await controller.selectTimer(seconds: 1800); XCTFail("Reset must fail") } catch {}
+        XCTAssertEqual(controller.mode, .off)
+        XCTAssertGreaterThan(brightness.restores, restores)
+        XCTAssertEqual(preferences.timerSeconds, 7200)
+        XCTAssertNotNil(controller.message)
+        XCTAssertEqual(sessions.calls, ["start 120", "reset timer 1800", "end"])
+        XCTAssertFalse(activity.isActive)
+        XCTAssertTrue(preferences.helperRecoveryPending)
+        guard case .failed(let detail) = controller.message else {
+            XCTFail("Both reset failure and recovery warning must remain visible")
+            return
+        }
+        XCTAssertTrue(detail.contains(HelperError.timeout.localizedDescription))
+        XCTAssertTrue(detail.contains("Power recovery pending"))
+    }
+
+    func testExpiredHelperResetReportsExistingStopReasonWithoutStarting() async throws {
+        preferences.selectTimer(seconds: 60)
+        let controller = makeController()
+        try await controller.select(.lidClosed)
+        sessions.timerResetError = HelperError.helper(.noSession, "Expired")
+        sessions.stopRecord = StopRecord(reason: .timer, time: Date())
+        do { try await controller.selectTimer(seconds: 1800); XCTFail("Expired session must fail") } catch {}
+        XCTAssertEqual(controller.mode, .off)
+        XCTAssertEqual(log.events.last, .modeOff(.lidClosed, .stopped(.timer, timerSeconds: 60)))
+        XCTAssertEqual(preferences.timerSeconds, 60)
+        XCTAssertEqual(sessions.calls.filter { $0.hasPrefix("start") }, ["start 120"])
+        XCTAssertNotNil(controller.message)
     }
 
     func testKeepScreenOnTimerTurnsOff() async throws {

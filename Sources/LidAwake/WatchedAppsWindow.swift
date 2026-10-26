@@ -451,7 +451,7 @@ struct WatchedAppsContent: View {
         .frame(minHeight: 44)
         .opacity(state == .notOpen ? 0.6 : 1)
         .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: Palette.rowCornerRadius, style: .continuous)
                 .fill(accent.opacity(0.18))
                 .padding(.horizontal, -8)
                 .opacity(keyboard.highlighted == entry.path ? 1 : 0)

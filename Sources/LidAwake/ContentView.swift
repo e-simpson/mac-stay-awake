@@ -176,7 +176,7 @@ struct ContentView: View {
         return StatusLine.text(
             mode: controller.mode,
             isPaused: controller.isPaused,
-            timerRemaining: controller.timerRemaining(),
+            timerRemaining: nil,
             battery: controller.mode == .lidClosed && preferences.batteryLimitEnabled ? reading.battery : .none,
             powerSource: reading.source,
             thermal: preferences.thermalProtectionEnabled ? ProcessInfoThermalState().read() : nil
@@ -195,22 +195,22 @@ struct ContentView: View {
                 ModeRow(
                     mode: .lidClosed,
                     isSelected: controller.mode == .lidClosed,
-                    subtitle: statusLine,
-                    subtitleIsActive: !controller.isPaused
+                    subtitle: statusLine
                 ) {
                     Task { await helperSetup.select(.lidClosed) }
                 } controls: {
                     ValueMenu(
                         label: "Stay Awake duration",
-                        selection: Binding(
-                            get: { preferences.timerEnabled ? preferences.timerSeconds : 0 },
-                            set: { seconds in
-                                if seconds > 0 { preferences.timerSeconds = seconds }
-                                preferences.timerEnabled = seconds > 0
-                            }
-                        ),
+                        selection: .constant(preferences.timerEnabled ? preferences.timerSeconds : 0),
                         choices: [0] + MenuChoices.list(SafetyPreferences.timerChoices, current: preferences.timerSeconds),
-                        title: { $0 == 0 ? String(localized: "Infinite") : DurationFormat.choice($0) }
+                        title: { $0 == 0 ? String(localized: "Infinite") : DurationFormat.choice($0) },
+                        displayText: controller.timerRemaining().map {
+                            String(localized: "\(DurationFormat.clock(Int($0.rounded(.up)))) left")
+                        },
+                        tint: controller.mode == .lidClosed ? Color(nsColor: ModeIcon.awakeColor) : .primary,
+                        onSelect: { seconds in
+                            Task { try? await controller.selectTimer(seconds: seconds) }
+                        }
                     )
                 }
                 .focused($focusedCard, equals: .lidClosed)
@@ -354,7 +354,6 @@ private struct ModeRow<Controls: View>: View {
     let mode: Mode
     let isSelected: Bool
     var subtitle: String? = nil
-    var subtitleIsActive = false
     let action: () -> Void
     @ViewBuilder let controls: Controls
 
@@ -366,13 +365,13 @@ private struct ModeRow<Controls: View>: View {
                 HStack(spacing: 10) {
                     ModeIconView(mode: mode)
                         .frame(width: 22, height: 22)
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: 1) {
                         Text(mode.title)
                             .font(.system(size: 14))
                         if let subtitle {
                             Text(subtitle)
                                 .font(.system(size: 11))
-                                .foregroundStyle(subtitleIsActive ? Color.green : .secondary)
+                                .foregroundStyle(isSelected && mode == .lidClosed ? Color(nsColor: ModeIcon.awakeColor) : .secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -383,17 +382,19 @@ private struct ModeRow<Controls: View>: View {
                             .accessibilityHidden(true)
                     }
                 }
-                .frame(maxWidth: .infinity, minHeight: 48)
+                .frame(maxWidth: .infinity, minHeight: 40)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .foregroundStyle(isSelected && mode == .lidClosed ? Color(nsColor: ModeIcon.awakeColor) : .primary)
             .accessibilityLabel(Text(mode.title))
             .accessibilityValue(Text(subtitle ?? ""))
             .accessibilityAddTraits(isSelected ? .isSelected : [])
             controls
         }
         .padding(.vertical, 4)
-        .modifier(MenuRowHighlight(isSelected: isSelected))
+        .padding(.horizontal, 4)
+        .modifier(MenuRowHighlight(isSelected: isSelected, accent: mode == .lidClosed ? Color(nsColor: ModeIcon.awakeColor) : nil))
         .opacity(isEnabled ? 1 : 0.6)
     }
 }
@@ -506,21 +507,22 @@ private struct MenuRowHighlight: ViewModifier {
     var isPressed = false
     var extendsToMargin = true
     var isSelected = false
+    var accent: Color? = nil
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovered = false
 
     func body(content: Content) -> some View {
         let highlighted = isEnabled && (isHovered || isPressed)
-        let background = highlighted ? Color(nsColor: .selectedContentBackgroundColor)
-            : isSelected ? Color.primary.opacity(0.06) : .clear
+        let background = highlighted ? accent?.opacity(0.18) ?? Color(nsColor: .selectedContentBackgroundColor)
+            : isSelected ? (accent ?? .primary).opacity(0.08) : .clear
         content
             .padding(.horizontal, 8)
             .contentShape(Rectangle())
             .background {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                RoundedRectangle(cornerRadius: Palette.rowCornerRadius, style: .continuous)
                     .fill(background)
             }
-            .foregroundStyle(highlighted ? Color(nsColor: .selectedMenuItemTextColor) : .primary)
+            .foregroundStyle(highlighted ? accent ?? Color(nsColor: .selectedMenuItemTextColor) : .primary)
             .onHover { isHovered = $0 }
             .padding(.horizontal, extendsToMargin ? -8 : 0)
     }
@@ -604,30 +606,49 @@ struct ValueMenu: View {
     @Binding var selection: Int
     let choices: [Int]
     let title: (Int) -> String
+    var displayText: String? = nil
+    var tint: Color = .primary
+    var onSelect: ((Int) -> Void)? = nil
 
     var body: some View {
         Menu {
-            Picker(label, selection: $selection) {
+            if let onSelect {
                 ForEach(choices, id: \.self) { value in
-                    Text(title(value)).tag(value)
+                    Button {
+                        onSelect(value)
+                    } label: {
+                        if value == selection {
+                            Label(title(value), systemImage: "checkmark")
+                        } else {
+                            Text(title(value))
+                        }
+                    }
+                    .accessibilityAddTraits(value == selection ? .isSelected : [])
                 }
+            } else {
+                Picker(label, selection: $selection) {
+                    ForEach(choices, id: \.self) { value in
+                        Text(title(value)).tag(value)
+                    }
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
             }
-            .pickerStyle(.inline)
-            .labelsHidden()
         } label: {
-            Text(title(selection))
+            Text(displayText ?? title(selection))
                 .font(.system(size: 12))
+                .monospacedDigit()
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         // A borderless menu draws its title in the tint color.
-        .tint(.primary)
+        .tint(tint)
         .fixedSize()
         .padding(.vertical, 2)
         .padding(.horizontal, 8)
-        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Palette.valueBackground))
+        .background(RoundedRectangle(cornerRadius: Palette.rowCornerRadius, style: .continuous).fill(Palette.valueBackground))
         .accessibilityLabel(Text(label))
-        .accessibilityValue(Text(title(selection)))
+        .accessibilityValue(Text(displayText ?? title(selection)))
     }
 }
 

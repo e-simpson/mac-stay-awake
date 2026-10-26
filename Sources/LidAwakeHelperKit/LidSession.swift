@@ -195,6 +195,36 @@ public final class LidSession {
         return claimed == .ok ? updateClosedPower() : claimed
     }
 
+    /// Successful reset changes only the timer and its monotonic origin, never the lease or power.
+    public func resetSessionTimer(timerSeconds: Int) -> (result: SessionResult, startedAt: TimeInterval?) {
+        guard timerSeconds == 0 || SafetySettings.timerRange.contains(timerSeconds) else {
+            return (Self.invalidSafety, nil)
+        }
+        guard isActive else {
+            return (SessionResult(code: .noSession, message: "No active session."), nil)
+        }
+        let origin = clock.now
+        // The timer or lease may expire between the last enforcement tick and this request.
+        let expired: StopReason?
+        if let startedAt, safety.timerSeconds > 0, origin - startedAt >= Double(safety.timerSeconds) {
+            expired = .timer
+        } else if let deadline, awakeClock.now >= deadline {
+            expired = .leaseExpired
+        } else {
+            expired = nil
+        }
+        if let expired {
+            let cleanup = stop(expired, batteryPercent: nil)
+            return (SessionResult(code: .noSession, message: cleanup.message ?? "The session has expired."), nil)
+        }
+        safety = SafetySettings(timerSeconds: timerSeconds,
+            batteryLimitPercent: safety.batteryLimitPercent, thermalProtection: safety.thermalProtection,
+            chargingOnly: safety.chargingOnly, idleSleepMinutes: safety.idleSleepMinutes,
+            watchedAppPaths: safety.watchedAppPaths, lowPowerWhenClosed: safety.lowPowerWhenClosed)
+        startedAt = origin
+        return (.ok, origin)
+    }
+
     public func end() -> SessionResult {
         guard let ended = ownership else {
             return clearLeftover()

@@ -36,6 +36,6 @@ final class RequirementTests: XCTestCase {
     func testIdentifiers() {
         XCTAssertEqual(HelperConstants.machServiceName, "dev.personal.MacStayAwake.helper")
         XCTAssertEqual(HelperConstants.plistName, "dev.personal.MacStayAwake.helper.plist")
-        XCTAssertEqual(HelperConstants.protocolVersion, 16)
+        XCTAssertEqual(HelperConstants.protocolVersion, 17)
     }
 }

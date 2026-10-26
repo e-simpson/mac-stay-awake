@@ -3,6 +3,8 @@ import LidAwakeCore
 import SwiftUI
 
 enum Palette {
+    static let rowCornerRadius: CGFloat = 8
+
     static func accent(_ theme: AccentTheme) -> Color {
         switch theme {
         case .blue: return blueAccent

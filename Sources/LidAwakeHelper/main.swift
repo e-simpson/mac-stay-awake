@@ -93,6 +93,13 @@ final class Helper: NSObject, HelperProtocol {
         withLease(leaseSeconds, reply: reply) { session.renew(lease: $0, safety: safety) }
     }
 
+    func resetSessionTimer(timerSeconds: Int, reply: @escaping (Int, String?, Double) -> Void) {
+        DispatchQueue.main.async {
+            let reset = session.resetSessionTimer(timerSeconds: timerSeconds)
+            reply(reset.result.code.rawValue, reset.result.message, reset.startedAt ?? -1)
+        }
+    }
+
     func endSession(reply: @escaping (Int, String?) -> Void) {
         perform(reply: reply) { session.end() }
     }

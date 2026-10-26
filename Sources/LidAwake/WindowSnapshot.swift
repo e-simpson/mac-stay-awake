@@ -461,6 +461,7 @@ private final class Inert: PowerAssertion, HelperPreparing, HelperInstalling, Li
 
     nonisolated func startSession(leaseSeconds: Int, safety: SafetySettings) async throws {}
     nonisolated func renewSession(leaseSeconds: Int, safety: SafetySettings) async throws { throw CancellationError() }
+    nonisolated func resetSessionTimer(timerSeconds: Int) async throws -> TimeInterval { 0 }
     nonisolated func endSession() async throws {}
     nonisolated func clearLeftover() async throws {}
     nonisolated func sessionStatus() async throws -> HelperSessionStatus { throw CancellationError() }

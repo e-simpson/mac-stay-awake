@@ -27,6 +27,9 @@ import Foundation
         lowPowerWhenClosed: Bool,
         reply: @escaping (Int, String?) -> Void
     )
+    /// Resets only an active session's timer. The origin uses CLOCK_MONOTONIC seconds;
+    /// -1 means the request was rejected. Does not renew the lease or change power policy.
+    func resetSessionTimer(timerSeconds: Int, reply: @escaping (Int, String?, Double) -> Void)
     func endSession(reply: @escaping (Int, String?) -> Void)
     func clearLeftover(reply: @escaping (Int, String?) -> Void)
     /// Replies with a result code, an error message, a `SleepFlagState`, a `SessionOwnership`,

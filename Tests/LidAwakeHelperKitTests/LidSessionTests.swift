@@ -32,6 +32,7 @@ private final class FakeClosedPower: ClosedLidPowerManaging {
 private final class FakeFlag: SleepFlag {
     var value: Bool
     var readFails = false
+    private(set) var reads = 0
     var writeFails = false
     private(set) var writes: [Bool] = []
 
@@ -40,6 +41,7 @@ private final class FakeFlag: SleepFlag {
     }
 
     func read() throws -> Bool {
+        reads += 1
         if readFails { throw FakeError() }
         return value
     }
@@ -673,6 +675,100 @@ final class LidSessionTests: XCTestCase {
             thermalProtection: thermal,
             idleSleepMinutes: idleMinutes
         )
+    }
+
+    func testTimerResetChangesOnlyTimerAndOriginForOwnedForeignAndPausedSessions() {
+        for state in ["owned", "foreign", "paused"] {
+            flag = FakeFlag(state == "foreign")
+            marker = FakeMarker()
+            power.reading = PowerReading(battery: .percent(80), source: state == "paused" ? .battery : .ac)
+            let settings = SafetySettings(timerSeconds: 600, batteryLimitPercent: 15,
+                thermalProtection: true, chargingOnly: state == "paused", idleSleepMinutes: 12,
+                watchedAppPaths: ["/Applications/Editor.app"], lowPowerWhenClosed: false)
+            let session = makeSession()
+            XCTAssertEqual(session.start(lease: 120, safety: settings), .ok)
+            let deadline = session.deadline
+            let ownership = session.ownership
+            let paused = session.isPaused
+            let reads = [flag.reads, power.readCount, thermal.readCount, idle.sampleCount]
+            let writes = flag.writes
+            let updates = closedPower.updates
+            var restores = 0
+            closedPower.onRestore = { restores += 1 }
+            let restarts = idle.restartCount
+            idle.countedMinutes = 3
+            for seconds in [60, 60, 0] {
+                advance(10)
+                let reset = session.resetSessionTimer(timerSeconds: seconds)
+                XCTAssertEqual(reset.result, .ok)
+                XCTAssertEqual(reset.startedAt, clock.now)
+                XCTAssertEqual(session.startedAt, clock.now)
+                XCTAssertEqual(session.safety.timerSeconds, seconds)
+            }
+            XCTAssertEqual(session.safety, SafetySettings(timerSeconds: 0, batteryLimitPercent: 15,
+                thermalProtection: true, chargingOnly: state == "paused", idleSleepMinutes: 12,
+                watchedAppPaths: ["/Applications/Editor.app"], lowPowerWhenClosed: false))
+            XCTAssertEqual(session.deadline, deadline)
+            XCTAssertEqual(session.ownership, ownership)
+            XCTAssertEqual(session.isPaused, paused)
+            XCTAssertEqual([flag.reads, power.readCount, thermal.readCount, idle.sampleCount], reads)
+            XCTAssertEqual(flag.writes, writes)
+            XCTAssertEqual(closedPower.updates, updates)
+            XCTAssertEqual(restores, 0)
+            XCTAssertEqual(idle.countedMinutes, 3)
+            XCTAssertEqual(idle.restartCount, restarts)
+            XCTAssertEqual(session.end(), .ok)
+            closedPower.onRestore = nil
+        }
+    }
+
+    func testTimerResetRejectsExpiredTimerLeaseAndEndedSessionWithoutResurrection() {
+        for expired in [StopReason.timer, .leaseExpired] {
+            let session = makeSession()
+            XCTAssertEqual(session.start(lease: 60, safety: limits(timer: expired == .timer ? 60 : 0)), .ok)
+            advance(60)
+            let reset = session.resetSessionTimer(timerSeconds: 3600)
+            XCTAssertEqual(reset.result.code, .noSession)
+            XCTAssertNil(reset.startedAt)
+            XCTAssertFalse(session.isActive)
+            XCTAssertNil(session.startedAt)
+            XCTAssertNil(session.deadline)
+            XCTAssertFalse(flag.value)
+            XCTAssertEqual(stopReasons.record?.reason, expired)
+            let later = session.resetSessionTimer(timerSeconds: 0)
+            XCTAssertEqual(later.result.code, .noSession)
+            XCTAssertNil(later.startedAt)
+        }
+    }
+
+    func testInvalidTimerResetLeavesActiveStateAndNoSessionUntouched() {
+        let session = makeSession()
+        XCTAssertEqual(session.resetSessionTimer(timerSeconds: 60).result.code, .noSession)
+        XCTAssertEqual(session.start(lease: 120, safety: limits(timer: 600)), .ok)
+        let start = session.startedAt
+        let deadline = session.deadline
+        let settings = session.safety
+        let writes = flag.writes
+        for seconds in [-1, 1, 59, 86401] {
+            let reset = session.resetSessionTimer(timerSeconds: seconds)
+            XCTAssertEqual(reset.result.code, .invalidArgument)
+            XCTAssertNil(reset.startedAt)
+        }
+        XCTAssertEqual(session.startedAt, start)
+        XCTAssertEqual(session.deadline, deadline)
+        XCTAssertEqual(session.safety, settings)
+        XCTAssertEqual(flag.writes, writes)
+    }
+
+    func testOrdinaryRenewalAfterResetStillCountsFromAcknowledgedOrigin() {
+        let session = makeSession()
+        XCTAssertEqual(session.start(lease: 120, safety: limits(timer: 600)), .ok)
+        advance(30)
+        let reset = session.resetSessionTimer(timerSeconds: 60)
+        advance(20)
+        XCTAssertEqual(session.renew(lease: 120, safety: limits(timer: 60)), .ok)
+        XCTAssertEqual(session.startedAt, reset.startedAt)
+        XCTAssertEqual(session.status().timerRemaining, 40)
     }
 
     func testTimerEndsSession() {
