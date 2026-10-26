@@ -20,12 +20,6 @@ struct ContentView: View {
     @State private var screenLimit: CGFloat?
     @State private var fixedHeight: CGFloat = 0
     @State private var scrollingContentHeight: CGFloat = 0
-    @FocusState private var focusedCard: Mode?
-    /// The card focus as it was before a mode switch: the cards are disabled while one runs,
-    /// which takes the focus off them.
-    @State private var cardFocus: Mode?
-    /// The selected mode the card focus last followed.
-    @State private var followedMode: Mode = .off
     @State private var isWindowKey = false
 
     private let power = IOKitPowerSource()
@@ -41,13 +35,9 @@ struct ContentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
                 header
-                VStack(spacing: 0) {
-                    Divider().padding(.bottom, 4)
-                    modeRows
-                    Divider().padding(.top, 4)
-                }
+                Divider()
             }
             .padding(.top, 10)
             .padding(.bottom, 4)
@@ -71,55 +61,18 @@ struct ContentView: View {
         .onAppear {
             launchAtLogin.refresh()
             autoLogout.refresh()
-            followedMode = controller.mode
         }
-        // Only this window: the activity log window becoming key leaves the cards alone.
         .onChange(of: isWindowKey) { isKey in
             guard isKey else { return }
             launchAtLogin.refresh()
             autoLogout.refresh()
-            // After AppKit has given focus to the first card as the window opens.
-            DispatchQueue.main.async {
-                followedMode = controller.mode
-                cardFocus = OpeningFocus.card(selected: controller.mode)
-                focusedCard = cardFocus
-            }
         }
         .onChange(of: controller.mode) { _ in
             autoLogout.refresh()
-            followSelection()
-        }
-        .onChange(of: controller.isBusy) { _ in followSelection() }
-        .onChange(of: focusedCard) { focus in
-            if !controller.isBusy {
-                cardFocus = focus
-            }
         }
     }
 
-    /// Once a switch is over, gives a focused card's focus to the selected card, or back to the
-    /// card it was taken from. When the selection changed, the focus is taken off first and given
-    /// on the next turn, after the cards have their new sizes: the system focus ring keeps the
-    /// bounds the card had when it got the focus.
-    private func followSelection() {
-        guard !controller.isBusy else { return }
-        let previous = followedMode
-        followedMode = controller.mode
-        guard let target = OpeningFocus.card(focused: cardFocus, previous: previous, selected: controller.mode) else {
-            return
-        }
-        let selectionChanged = previous != controller.mode
-        guard selectionChanged || focusedCard != target else { return }
-        cardFocus = target
-        if selectionChanged {
-            focusedCard = nil
-        }
-        DispatchQueue.main.async {
-            focusedCard = target
-        }
-    }
-
-    /// Everything below the mode cards; it scrolls when the window would not fit on the screen.
+    /// Everything below the header; it scrolls when the window would not fit on the screen.
     private var scrollingContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             if !messages.isEmpty {
@@ -150,9 +103,48 @@ struct ContentView: View {
     }
 
     private var header: some View {
-        Text(verbatim: "MacStayAwake")
-            .font(.system(size: 13, weight: .semibold))
-            .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
+        TimelineView(.periodic(from: .now, by: 15)) { _ in
+            let status = StatusLine.header(
+                mode: controller.mode, isStarting: helperSetup.isWaiting, isPaused: controller.isPaused,
+                hasWarning: controller.message != nil || helperSetup.prompt != nil,
+                power: power.read(), showsBattery: preferences.batteryLimitEnabled,
+                batteryLimit: preferences.batteryLimitEnabled && preferences.batteryLimitApplies ? preferences.batteryLimitPercent : nil,
+                thermal: preferences.thermalProtectionEnabled ? ProcessInfoThermalState().read() : nil
+            )
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 8) {
+                    Text(verbatim: "MacStayAwake")
+                        .font(.system(size: 13, weight: .semibold))
+                    Spacer(minLength: 0)
+                    ValueMenu(
+                        label: "Stay Awake duration",
+                        selection: .constant(preferences.timerEnabled ? preferences.timerSeconds : 0),
+                        choices: [0] + MenuChoices.list(SafetyPreferences.timerChoices, current: preferences.timerSeconds),
+                        title: { $0 == 0 ? String(localized: "Infinite") : DurationFormat.choice($0) },
+                        displayText: controller.timerRemaining().map {
+                            String(localized: "\(DurationFormat.clock(Int($0.rounded(.up)))) left")
+                        },
+                        tint: controller.mode == .lidClosed ? Color(nsColor: ModeIcon.awakeColor) : .primary,
+                        onSelect: { seconds in Task { try? await controller.selectTimer(seconds: seconds) } }
+                    )
+                    Toggle("Stay Awake", isOn: Binding(
+                        get: { controller.mode == .lidClosed || helperSetup.isWaiting },
+                        set: { enabled in Task { await helperSetup.select(enabled ? .lidClosed : .off) } }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .tint(Color(nsColor: ModeIcon.awakeColor))
+                }
+                .disabled(controller.isBusy || controller.isQuitting)
+                Text(status.text)
+                    .font(.system(size: 11))
+                    .foregroundStyle(status.healthy ? Color.green : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.bottom, 2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private var footer: some View {
@@ -169,54 +161,6 @@ struct ContentView: View {
         }
         .font(.system(size: 13))
         .buttonStyle(MenuRowButtonStyle(extendsToMargin: false))
-    }
-
-    private var statusLine: String? {
-        let reading = power.read()
-        return StatusLine.text(
-            mode: controller.mode,
-            isPaused: controller.isPaused,
-            timerRemaining: nil,
-            battery: controller.mode == .lidClosed && preferences.batteryLimitEnabled ? reading.battery : .none,
-            powerSource: reading.source,
-            thermal: preferences.thermalProtectionEnabled ? ProcessInfoThermalState().read() : nil
-        )
-    }
-
-    private var modeRows: some View {
-        TimelineView(.periodic(from: .now, by: 15)) { _ in
-            VStack(spacing: 0) {
-                ModeRow(mode: .off, isSelected: controller.mode == .off) {
-                    Task { await helperSetup.select(.off) }
-                } controls: {
-                    EmptyView()
-                }
-                .focused($focusedCard, equals: .off)
-                ModeRow(
-                    mode: .lidClosed,
-                    isSelected: controller.mode == .lidClosed,
-                    subtitle: statusLine
-                ) {
-                    Task { await helperSetup.select(.lidClosed) }
-                } controls: {
-                    ValueMenu(
-                        label: "Stay Awake duration",
-                        selection: .constant(preferences.timerEnabled ? preferences.timerSeconds : 0),
-                        choices: [0] + MenuChoices.list(SafetyPreferences.timerChoices, current: preferences.timerSeconds),
-                        title: { $0 == 0 ? String(localized: "Infinite") : DurationFormat.choice($0) },
-                        displayText: controller.timerRemaining().map {
-                            String(localized: "\(DurationFormat.clock(Int($0.rounded(.up)))) left")
-                        },
-                        tint: controller.mode == .lidClosed ? Color(nsColor: ModeIcon.awakeColor) : .primary,
-                        onSelect: { seconds in
-                            Task { try? await controller.selectTimer(seconds: seconds) }
-                        }
-                    )
-                }
-                .focused($focusedCard, equals: .lidClosed)
-            }
-            .disabled(controller.isBusy || controller.isQuitting)
-        }
     }
 
     private var messages: [WindowMessage] {
@@ -342,61 +286,6 @@ struct ContentView: View {
 
 }
 
-private extension Mode {
-    var title: LocalizedStringKey {
-        switch self {
-        case .off: return "Normal"
-        case .keepScreenOn: return "Keep Screen On"
-        case .lidClosed: return "Stay Awake"
-        }
-    }
-
-}
-
-private struct ModeRow<Controls: View>: View {
-    let mode: Mode
-    let isSelected: Bool
-    var subtitle: String? = nil
-    let action: () -> Void
-    @ViewBuilder let controls: Controls
-
-    @Environment(\.isEnabled) private var isEnabled
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Button(action: action) {
-                HStack(spacing: 10) {
-                    ModeIconView(mode: mode)
-                        .frame(width: 22, height: 22)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(mode.title)
-                            .font(.system(size: 14))
-                        if let subtitle {
-                            Text(subtitle)
-                                .font(.system(size: 11))
-                                .foregroundStyle(isSelected && mode == .lidClosed ? Color(nsColor: ModeIcon.awakeColor) : .secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    Spacer(minLength: 0)
-                }
-                .frame(maxWidth: .infinity, minHeight: 40)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(isSelected && mode == .lidClosed ? Color(nsColor: ModeIcon.awakeColor) : .primary)
-            .accessibilityLabel(Text(mode.title))
-            .accessibilityValue(Text(subtitle ?? ""))
-            .accessibilityAddTraits(isSelected ? .isSelected : [])
-            controls
-        }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 4)
-        .modifier(MenuRowHighlight(isSelected: isSelected, accent: mode == .lidClosed ? Color(nsColor: ModeIcon.awakeColor) : nil))
-        .opacity(isEnabled ? 1 : 0.6)
-    }
-}
-
 private extension MessageKind {
     var symbol: String {
         switch self {
@@ -504,15 +393,12 @@ private struct MessageBanner: View {
 private struct MenuRowHighlight: ViewModifier {
     var isPressed = false
     var extendsToMargin = true
-    var isSelected = false
-    var accent: Color? = nil
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovered = false
 
     func body(content: Content) -> some View {
         let highlighted = isEnabled && (isHovered || isPressed)
-        let background = highlighted ? accent?.opacity(0.18) ?? Color(nsColor: .selectedContentBackgroundColor)
-            : isSelected ? (accent ?? .primary).opacity(0.08) : .clear
+        let background = highlighted ? Color(nsColor: .selectedContentBackgroundColor) : .clear
         content
             .padding(.horizontal, 8)
             .contentShape(Rectangle())
@@ -520,7 +406,7 @@ private struct MenuRowHighlight: ViewModifier {
                 RoundedRectangle(cornerRadius: Palette.rowCornerRadius, style: .continuous)
                     .fill(background)
             }
-            .foregroundStyle(highlighted ? accent ?? Color(nsColor: .selectedMenuItemTextColor) : .primary)
+            .foregroundStyle(highlighted ? Color(nsColor: .selectedMenuItemTextColor) : .primary)
             .onHover { isHovered = $0 }
             .padding(.horizontal, extendsToMargin ? -8 : 0)
     }
@@ -528,12 +414,10 @@ private struct MenuRowHighlight: ViewModifier {
 
 private struct MenuRowButtonStyle: ButtonStyle {
     var extendsToMargin = true
-    var isSelected = false
-
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .frame(minHeight: 24)
-            .modifier(MenuRowHighlight(isPressed: configuration.isPressed, extendsToMargin: extendsToMargin, isSelected: isSelected))
+            .modifier(MenuRowHighlight(isPressed: configuration.isPressed, extendsToMargin: extendsToMargin))
     }
 }
 

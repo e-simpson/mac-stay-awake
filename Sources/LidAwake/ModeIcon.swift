@@ -105,32 +105,6 @@ enum ModeIcon {
     }
 }
 
-/// The mode shape in the current foreground style.
-struct ModeIconView: View {
-    let mode: Mode
-
-    var body: some View {
-        Group {
-            if mode == .lidClosed, let symbol = ModeIcon.awakeSymbol {
-                Image(nsImage: symbol)
-                    .resizable()
-                    .renderingMode(.template)
-                    .aspectRatio(contentMode: .fit)
-                    .foregroundStyle(Color(nsColor: ModeIcon.awakeColor))
-            } else {
-                Canvas { context, size in
-                    let glyph = ModeIcon.glyph(for: mode)
-                    let style: GraphicsContext.Shading = mode == .lidClosed ? .color(Color(nsColor: ModeIcon.awakeColor)) : .foreground
-                    context.scaleBy(x: size.width / ModeIcon.gridSize, y: size.height / ModeIcon.gridSize)
-                    context.fill(Path(glyph.filled), with: style)
-                    context.stroke(Path(glyph.stroked), with: style, style: ModeIcon.strokeStyle)
-                }
-            }
-        }
-        .accessibilityHidden(true)
-    }
-}
-
 struct MenuBarIcon: View {
     @ObservedObject var controller: ModeController
 

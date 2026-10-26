@@ -7,6 +7,9 @@
 "For the road. Keeps working with the lid shut or the screen locked." = "For the road. Keeps working with the lid shut or the screen locked.";
 
 /* Status line */
+"Status: %@" = "Status: %@";
+"Starting" = "Starting";
+"On" = "On";
 "%@ left" = "%@ left";
 "Screen stays on" = "Screen stays on";
 "Paused · on battery" = "Paused · on battery";

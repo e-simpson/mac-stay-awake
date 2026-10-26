@@ -16,23 +16,33 @@ public enum SafetyLayout: Equatable {
     }
 }
 
-public enum OpeningFocus {
-    /// The mode card that takes keyboard focus when the window opens: the selected one, so the
-    /// focus ring and the selection mark the same card.
-    public static func card(selected: Mode) -> Mode {
-        selected
-    }
-
-    /// The mode card that has keyboard focus after the selected mode went from `previous` to
-    /// `selected`. `focused` is the card that had focus, nil when the focus was elsewhere; a focus
-    /// on a card follows the selection, any other focus stays where it is.
-    public static func card(focused: Mode?, previous: Mode, selected: Mode) -> Mode? {
-        guard focused != nil, previous != selected else { return focused }
-        return selected
-    }
-}
-
 public enum StatusLine {
+    /// Header text and whether the active session has no visible safety concerns.
+    public static func header(mode: Mode, isStarting: Bool, isPaused: Bool, hasWarning: Bool,
+                              power: PowerReading, showsBattery: Bool, batteryLimit: Int?,
+                              thermal: ThermalState?) -> (text: String, healthy: Bool) {
+        let detail: String
+        if isStarting && mode == .off {
+            detail = String(localized: "Starting")
+        } else if mode == .off {
+            detail = String(localized: "Off")
+        } else {
+            detail = text(mode: mode, isPaused: isPaused, timerRemaining: nil,
+                          battery: showsBattery ? power.battery : .none,
+                          powerSource: power.source, thermal: thermal) ?? String(localized: "On")
+        }
+        var healthy = mode == .lidClosed && !isPaused && !hasWarning
+        if let thermal, thermal == .serious || thermal == .critical || thermal == .unknown { healthy = false }
+        if let batteryLimit {
+            switch (power.battery, power.source) {
+            case (.none, _), (.percent, .ac): break
+            case (.percent(let value), .battery): if value <= batteryLimit { healthy = false }
+            default: healthy = false
+            }
+        }
+        return (String(localized: "Status: \(detail)"), healthy)
+    }
+
     /// The active mode subtitle; nil when there is nothing to show.
     public static func text(mode: Mode, isPaused: Bool, timerRemaining: TimeInterval?, battery: BatteryLevel, powerSource: PowerSource, thermal: ThermalState?) -> String? {
         let timer = timerRemaining.map { seconds in

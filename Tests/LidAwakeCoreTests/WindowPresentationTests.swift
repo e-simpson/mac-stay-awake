@@ -5,6 +5,29 @@ import XCTest
 final class StatusLineTests: XCTestCase {
     private let eightyMinutes: TimeInterval = 80 * 60
 
+    func testHeaderStatusAndHealthyState() {
+        let battery = PowerReading(battery: .percent(82), source: .battery)
+        func header(_ mode: Mode = .lidClosed, starting: Bool = false, paused: Bool = false,
+                    warning: Bool = false, power: PowerReading? = nil, limit: Int? = 20,
+                    thermal: ThermalState? = .nominal, showsBattery: Bool = true) -> (text: String, healthy: Bool) {
+            StatusLine.header(mode: mode, isStarting: starting, isPaused: paused, hasWarning: warning,
+                              power: power ?? battery, showsBattery: showsBattery, batteryLimit: limit, thermal: thermal)
+        }
+        XCTAssertEqual(header(.off).text, "Status: Off")
+        XCTAssertFalse(header(.off).healthy)
+        XCTAssertEqual(header(.off, starting: true).text, "Status: Starting")
+        XCTAssertEqual(header().text, "Status: Battery 82% · Nominal thermals")
+        XCTAssertTrue(header().healthy)
+        XCTAssertFalse(header(paused: true).healthy)
+        XCTAssertFalse(header(warning: true).healthy)
+        XCTAssertFalse(header(thermal: .serious).healthy)
+        XCTAssertFalse(header(thermal: .unknown).healthy)
+        XCTAssertFalse(header(power: PowerReading(battery: .percent(20), source: .battery)).healthy)
+        XCTAssertFalse(header(power: PowerReading(battery: .unknown, source: .battery)).healthy)
+        XCTAssertTrue(header(power: PowerReading(battery: .percent(10), source: .ac)).healthy)
+        XCTAssertEqual(header(limit: nil, thermal: nil, showsBattery: false).text, "Status: On")
+    }
+
     func testOffShowsNothing() {
         XCTAssertNil(StatusLine.text(mode: .off, isPaused: false, timerRemaining: nil, battery: .percent(82), powerSource: .battery, thermal: .nominal))
     }
@@ -223,46 +246,5 @@ final class WindowMessageTests: XCTestCase {
         let messages = WindowMessage.list(helper: .approval, mode: .turnedOff("The timer ran out."))
         XCTAssertEqual(messages.map(\.source), [.helper, .mode])
         XCTAssertEqual(messages.map(\.title), ["Permission needed", "MacStayAwake turned off"])
-    }
-}
-
-final class OpeningFocusTests: XCTestCase {
-    func testOffFocusesOff() {
-        XCTAssertEqual(OpeningFocus.card(selected: .off), .off)
-    }
-
-    func testKeepScreenOnFocusesKeepScreenOn() {
-        XCTAssertEqual(OpeningFocus.card(selected: .keepScreenOn), .keepScreenOn)
-    }
-
-    func testLidClosedFocusesLidClosed() {
-        XCTAssertEqual(OpeningFocus.card(selected: .lidClosed), .lidClosed)
-    }
-
-    func testFocusOnSelectedCardFollowsNewSelection() {
-        XCTAssertEqual(OpeningFocus.card(focused: .keepScreenOn, previous: .keepScreenOn, selected: .lidClosed), .lidClosed)
-    }
-
-    func testFocusOnOtherCardMovesToNewSelection() {
-        XCTAssertEqual(OpeningFocus.card(focused: .off, previous: .keepScreenOn, selected: .lidClosed), .lidClosed)
-    }
-
-    func testFocusOnCardMovesToOffWhenModeEndsOnItsOwn() {
-        XCTAssertEqual(OpeningFocus.card(focused: .lidClosed, previous: .lidClosed, selected: .off), .off)
-    }
-
-    func testFocusOnCardThatBecomesSelectedStaysOnIt() {
-        XCTAssertEqual(OpeningFocus.card(focused: .lidClosed, previous: .off, selected: .lidClosed), .lidClosed)
-    }
-
-    func testNoFocusOnCardsStaysAsIs() {
-        XCTAssertNil(OpeningFocus.card(focused: nil, previous: .off, selected: .lidClosed))
-        XCTAssertNil(OpeningFocus.card(focused: nil, previous: .lidClosed, selected: .off))
-    }
-
-    func testUnchangedModeKeepsFocus() {
-        XCTAssertEqual(OpeningFocus.card(focused: .off, previous: .keepScreenOn, selected: .keepScreenOn), .off)
-        XCTAssertEqual(OpeningFocus.card(focused: .lidClosed, previous: .lidClosed, selected: .lidClosed), .lidClosed)
-        XCTAssertNil(OpeningFocus.card(focused: nil, previous: .keepScreenOn, selected: .keepScreenOn))
     }
 }

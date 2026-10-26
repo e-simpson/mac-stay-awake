@@ -7,6 +7,9 @@
 "For the road. Keeps working with the lid shut or the screen locked." = "Für unterwegs. Läuft weiter bei geschlossenem Deckel oder gesperrtem Bildschirm.";
 
 /* Status line */
+"Status: %@" = "Status: %@";
+"Starting" = "Wird gestartet";
+"On" = "An";
 "%@ left" = "noch %@";
 "Screen stays on" = "Bildschirm bleibt an";
 "Paused · on battery" = "Pausiert · Akkubetrieb";
