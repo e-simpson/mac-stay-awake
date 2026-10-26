@@ -3,7 +3,7 @@ import Foundation
 import LidAwakeShared
 
 public protocol ScheduledWakeService {
-    func setScheduledWake(minuteOfDay: Int) async throws
+    func setScheduledWakes(minutesOfDay: [Int]) async throws
     /// The wakes the helper scheduled, earliest first.
     func scheduledWakes() async throws -> [Date]
 }
@@ -71,7 +71,10 @@ public final class WakeScheduler: ObservableObject, SystemWakeHandling {
     private let now: () -> Date
     private let bootTime: () -> Date?
     private var preferenceChanges: AnyCancellable?
-    private var generation = 0
+    private var syncing = false
+    private var needsSync = false
+    private var syncWaiters: [CheckedContinuation<Void, Never>] = []
+    private var refreshTask: Task<Void, Never>?
     /// When the workspace last reported the Mac going to sleep; the dark wakes in between are not reported.
     private var lastSleep: Date?
 
@@ -99,7 +102,18 @@ public final class WakeScheduler: ObservableObject, SystemWakeHandling {
         }
     }
 
+    deinit { refreshTask?.cancel() }
+
     public func start() {
+        if refreshTask == nil {
+            refreshTask = Task { [weak self] in
+                while !Task.isCancelled {
+                    do { try await Task.sleep(nanoseconds: 3_600_000_000_000) } catch { return }
+                    guard let self else { return }
+                    await self.syncIfNeeded()
+                }
+            }
+        }
         clockMonitor.start { [weak self] in
             Task { @MainActor in await self?.syncIfNeeded() }
         }
@@ -122,7 +136,7 @@ public final class WakeScheduler: ObservableObject, SystemWakeHandling {
 
     /// True when the setting is on and `time` is within the window around a wake the helper reported.
     public func isScheduledWake(at time: Date) -> Bool {
-        guard preferences.wakeEnabled else { return false }
+        guard preferences.hasEnabledAlarms else { return false }
         return scheduledWakes.contains {
             time >= $0.addingTimeInterval(-Self.earliestBeforeWake) && time <= $0.addingTimeInterval(Self.latestAfterWake)
         }
@@ -160,7 +174,7 @@ public final class WakeScheduler: ObservableObject, SystemWakeHandling {
         let cutoff = now().addingTimeInterval(-Self.latestAfterWake)
         let past = scheduledWakes.filter { $0 < cutoff }
         guard !past.isEmpty else { return }
-        if preferences.wakeEnabled {
+        if preferences.hasEnabledAlarms {
             for time in past where missed(time) {
                 log.record(.modeSkipped(.lidClosed, .missed), at: time)
             }
@@ -170,7 +184,7 @@ public final class WakeScheduler: ObservableObject, SystemWakeHandling {
 
     /// With the setting off and no wakes left there is nothing to schedule or cancel.
     private func syncIfNeeded() async {
-        guard preferences.wakeEnabled || !scheduledWakes.isEmpty else { return }
+        guard preferences.hasEnabledAlarms || !scheduledWakes.isEmpty else { return }
         await sync()
     }
 
@@ -179,22 +193,48 @@ public final class WakeScheduler: ObservableObject, SystemWakeHandling {
         preferences.scheduledWakeTimes = wakes
     }
 
-    /// Sends the setting to the helper, if it is ready, and reads back the wakes it keeps.
+    /// Serializes writes and readback. Changes during a call are coalesced into the newest list.
     public func sync() async {
-        guard await helper.isReady() else { return }
-        generation += 1
-        let current = generation
-        let minuteOfDay = preferences.helperMinuteOfDay
-        do {
-            try await service.setScheduledWake(minuteOfDay: minuteOfDay)
-            let wakes = try await service.scheduledWakes()
-            // An answer to an older call must not replace a newer one.
-            guard current == generation else { return }
-            remember(wakes)
-            lastError = nil
-        } catch {
-            guard current == generation else { return }
-            lastError = error.localizedDescription
+        needsSync = true
+        if syncing {
+            await withCheckedContinuation { syncWaiters.append($0) }
+            return
+        }
+        syncing = true
+        defer {
+            syncing = false
+            let waiters = syncWaiters
+            syncWaiters.removeAll()
+            waiters.forEach { $0.resume() }
+        }
+        while needsSync {
+            needsSync = false
+            guard await helper.isReady() else {
+                if preferences.hasEnabledAlarms {
+                    lastError = String(localized: "Alarm changes are pending until the helper is available.")
+                } else if !scheduledWakes.isEmpty || lastError != nil {
+                    lastError = String(localized: "Alarm cancellation is pending. Previously scheduled alarms may still wake this Mac until the helper is available.")
+                }
+                continue
+            }
+            let minutes = preferences.enabledMinutesOfDay
+            needsSync = false
+            do {
+                try await service.setScheduledWakes(minutesOfDay: minutes)
+                let wakes = try await service.scheduledWakes()
+                guard minutes == preferences.enabledMinutesOfDay else {
+                    needsSync = true
+                    continue
+                }
+                remember(wakes)
+                lastError = nil
+            } catch {
+                if minutes == preferences.enabledMinutesOfDay {
+                    lastError = error.localizedDescription
+                } else {
+                    needsSync = true
+                }
+            }
         }
     }
 }

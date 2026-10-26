@@ -25,15 +25,28 @@ private final class FakeHelper: HelperPreparing {
 private final class FakeWakeService: ScheduledWakeService {
     var wakes: [Date] = []
     var setError: Error?
+    var blockNextSet = false
+    private var pendingSet: CheckedContinuation<Void, Never>?
+    private(set) var appliedMinutes: [Int] = []
+
+    func releaseSet() {
+        pendingSet?.resume()
+        pendingSet = nil
+    }
     private let journal: Journal
 
     init(journal: Journal) {
         self.journal = journal
     }
 
-    func setScheduledWake(minuteOfDay: Int) async throws {
-        journal.calls.append("set \(minuteOfDay)")
+    func setScheduledWakes(minutesOfDay: [Int]) async throws {
+        journal.calls.append("set \(minutesOfDay)")
+        if blockNextSet {
+            blockNextSet = false
+            await withCheckedContinuation { pendingSet = $0 }
+        }
         if let setError { throw setError }
+        appliedMinutes = minutesOfDay
     }
 
     func scheduledWakes() async throws -> [Date] {
@@ -131,6 +144,18 @@ final class WakeSchedulerTests: XCTestCase {
         return scheduler
     }
 
+    private func setEnabled(_ enabled: Bool) {
+        var alarm = preferences.alarms.first ?? WakeAlarm(minuteOfDay: 480)
+        alarm.isEnabled = enabled
+        XCTAssertTrue(preferences.save(alarm))
+    }
+
+    private func setMinute(_ minute: Int) {
+        var alarm = preferences.alarms.first ?? WakeAlarm(minuteOfDay: 480)
+        alarm.minuteOfDay = minute
+        XCTAssertTrue(preferences.save(alarm))
+    }
+
     private func settle(until done: () -> Bool) async {
         for _ in 0..<200 where !done() {
             await Task.yield()
@@ -139,7 +164,7 @@ final class WakeSchedulerTests: XCTestCase {
 
     /// A scheduler that remembers `wakeTime` with the setting on; the journal starts empty.
     private func scheduledAtWakeTime() async -> WakeScheduler {
-        preferences.wakeEnabled = true
+        setEnabled(true)
         service.wakes = [wakeTime, wakeTime.addingTimeInterval(86_400)]
         let scheduler = makeScheduler()
         await scheduler.sync()
@@ -157,43 +182,92 @@ final class WakeSchedulerTests: XCTestCase {
     // MARK: Setting
 
     func testSettingDefaults() {
-        XCTAssertFalse(preferences.wakeEnabled)
-        XCTAssertEqual(preferences.wakeMinuteOfDay, 480)
-        XCTAssertEqual(preferences.helperMinuteOfDay, -1)
+        XCTAssertEqual(preferences.alarms, [])
+        XCTAssertFalse(preferences.hasEnabledAlarms)
+        XCTAssertEqual(preferences.enabledMinutesOfDay, [])
     }
 
     func testSettingIsReadFromTheKeys() {
         defaults.set(true, forKey: "wakeEnabled")
         defaults.set(390, forKey: "wakeMinuteOfDay")
-        XCTAssertTrue(preferences.wakeEnabled)
-        XCTAssertEqual(preferences.wakeMinuteOfDay, 390)
-        XCTAssertEqual(preferences.helperMinuteOfDay, 390)
+        XCTAssertTrue(preferences.hasEnabledAlarms)
+        XCTAssertEqual(preferences.alarms.first?.minuteOfDay, 390)
+        XCTAssertEqual(preferences.enabledMinutesOfDay, [390])
     }
 
     func testMinuteOutOfRangeReadsAsEight() {
         for stored in [-1, 1440, 100_000] {
             defaults.set(stored, forKey: "wakeMinuteOfDay")
-            XCTAssertEqual(WakePreferences(defaults: defaults).wakeMinuteOfDay, 480, "\(stored)")
+            XCTAssertEqual(WakePreferences(defaults: defaults).alarms.first?.minuteOfDay, 480, "\(stored)")
         }
         defaults.set(1439, forKey: "wakeMinuteOfDay")
-        XCTAssertEqual(WakePreferences(defaults: defaults).wakeMinuteOfDay, 1439)
+        XCTAssertEqual(WakePreferences(defaults: defaults).alarms.first?.minuteOfDay, 1439)
     }
 
     func testSettingIsSaved() {
-        preferences.wakeEnabled = true
-        preferences.wakeMinuteOfDay = 75
-        XCTAssertTrue(defaults.bool(forKey: "wakeEnabled"))
-        XCTAssertEqual(defaults.integer(forKey: "wakeMinuteOfDay"), 75)
+        setEnabled(true)
+        setMinute(75)
+        let reloaded = WakePreferences(defaults: defaults)
+        XCTAssertEqual(reloaded.alarms, preferences.alarms)
+        XCTAssertEqual(reloaded.enabledMinutesOfDay, [75])
+    }
+
+    func testMigrationPreservesDisabledTimeAndDoesNotResurrectAfterDeletingIt() {
+        defaults.set(false, forKey: WakePreferences.Key.wakeEnabled)
+        defaults.set(615, forKey: WakePreferences.Key.wakeMinuteOfDay)
+        let migrated = WakePreferences(defaults: defaults)
+        XCTAssertEqual(migrated.alarms.first?.minuteOfDay, 615)
+        XCTAssertEqual(migrated.enabledMinutesOfDay, [])
+        migrated.remove(id: migrated.alarms[0].id)
+        XCTAssertEqual(WakePreferences(defaults: defaults).alarms, [])
+    }
+
+    func testMalformedNewListDoesNotRestoreAnOlderEnabledAlarm() {
+        defaults.set(true, forKey: WakePreferences.Key.wakeEnabled)
+        defaults.set(480, forKey: WakePreferences.Key.wakeMinuteOfDay)
+        let malformedValues: [Any] = ["not a saved alarm list", Data("invalid JSON".utf8)]
+        for malformed in malformedValues {
+            defaults.set(malformed, forKey: WakePreferences.Key.alarms)
+            XCTAssertEqual(WakePreferences(defaults: defaults).alarms, [])
+        }
+    }
+
+    func testIndividualAlarmEditsPersistAndRejectDuplicateTimes() {
+        let morning = WakeAlarm(minuteOfDay: 480, isEnabled: true)
+        var evening = WakeAlarm(minuteOfDay: 1080)
+        XCTAssertTrue(preferences.save(morning))
+        XCTAssertTrue(preferences.save(evening))
+        XCTAssertEqual(preferences.enabledMinutesOfDay, [480])
+        evening.isEnabled = true
+        XCTAssertTrue(preferences.save(evening))
+        var duplicate = evening
+        duplicate.minuteOfDay = morning.minuteOfDay
+        XCTAssertFalse(preferences.save(duplicate))
+        XCTAssertEqual(WakePreferences(defaults: defaults).alarms, [morning, evening])
+        preferences.remove(id: morning.id)
+        XCTAssertEqual(preferences.enabledMinutesOfDay, [1080])
+    }
+
+    func testAlarmCountAndMinuteBoundsRejectWithoutChangingSavedList() {
+        for minute in 0..<ScheduledWake.maximumAlarms {
+            XCTAssertTrue(preferences.save(WakeAlarm(minuteOfDay: minute)))
+        }
+        let saved = preferences.alarms
+        for minute in [-1, 1440, 600] {
+            XCTAssertFalse(preferences.save(WakeAlarm(minuteOfDay: minute)))
+        }
+        XCTAssertEqual(preferences.alarms, saved)
+        XCTAssertEqual(WakePreferences(defaults: defaults).alarms, saved)
     }
 
     // MARK: Agreement with the helper
 
     func testLaunchWithSettingOnSchedulesTheMinute() async {
-        preferences.wakeEnabled = true
+        setEnabled(true)
         service.wakes = [wakeTime]
         let scheduler = makeScheduler()
         await scheduler.sync()
-        XCTAssertEqual(journal.calls, ["set 480", "read"])
+        XCTAssertEqual(journal.calls, ["set [480]", "read"])
         XCTAssertEqual(scheduler.scheduledWakes, [wakeTime])
         XCTAssertNil(scheduler.lastError)
     }
@@ -201,44 +275,88 @@ final class WakeSchedulerTests: XCTestCase {
     func testLaunchWithSettingOffCancels() async {
         let scheduler = makeScheduler()
         await scheduler.sync()
-        XCTAssertEqual(journal.calls, ["set -1", "read"])
+        XCTAssertEqual(journal.calls, ["set []", "read"])
         XCTAssertEqual(scheduler.scheduledWakes, [])
     }
 
-    func testHelperNotReadyMakesNoCall() async {
+    func testHelperNotReadyMakesNoCallAndReportsPendingChanges() async {
         helper.ready = false
-        preferences.wakeEnabled = true
+        setEnabled(true)
         let scheduler = makeScheduler()
         await scheduler.sync()
         XCTAssertEqual(journal.calls, [])
         XCTAssertEqual(helper.readyChecks, 1)
+        XCTAssertNotNil(scheduler.lastError)
+    }
+
+    func testDeletingLastAlarmWhileHelperIsUnavailableKeepsConfirmedEventsAndReportsPendingCancellation() async {
+        setEnabled(true)
+        service.wakes = [wakeTime]
+        let scheduler = makeScheduler()
+        await scheduler.sync()
+        helper.ready = false
+        preferences.remove(id: preferences.alarms[0].id)
+        await scheduler.sync()
+        XCTAssertEqual(scheduler.scheduledWakes, [wakeTime])
+        XCTAssertEqual(preferences.scheduledWakeTimes, [wakeTime])
+        XCTAssertTrue(scheduler.lastError?.contains("pending") == true)
+        XCTAssertTrue(scheduler.lastError?.contains("may still") == true)
+
+        helper.ready = true
+        service.wakes = []
+        await scheduler.sync()
+        XCTAssertEqual(scheduler.scheduledWakes, [])
+        XCTAssertEqual(preferences.scheduledWakeTimes, [])
         XCTAssertNil(scheduler.lastError)
     }
 
     func testChangingTheTimeCallsAgain() async {
         _ = makeScheduler()
-        preferences.wakeEnabled = true
+        setEnabled(true)
         await settle { journal.calls.count >= 2 }
-        XCTAssertEqual(journal.calls, ["set 480", "read"])
+        XCTAssertEqual(journal.calls, ["set [480]", "read"])
 
-        preferences.wakeMinuteOfDay = 600
+        setMinute(600)
         await settle { journal.calls.count >= 4 }
-        XCTAssertEqual(journal.calls, ["set 480", "read", "set 600", "read"])
+        XCTAssertEqual(journal.calls, ["set [480]", "read", "set [600]", "read"])
 
-        preferences.wakeEnabled = false
+        setEnabled(false)
         await settle { journal.calls.count >= 6 }
-        XCTAssertEqual(journal.calls, ["set 480", "read", "set 600", "read", "set -1", "read"])
+        XCTAssertEqual(journal.calls, ["set [480]", "read", "set [600]", "read", "set []", "read"])
+    }
+
+    func testInFlightWriteFinishesBeforeTheNewestAlarmListIsApplied() async {
+        setEnabled(true)
+        service.blockNextSet = true
+        let scheduler = makeScheduler()
+        let first = Task { await scheduler.sync() }
+        await settle { journal.calls == ["set [480]"] }
+        setMinute(600)
+        XCTAssertTrue(preferences.save(WakeAlarm(minuteOfDay: 900, isEnabled: true)))
+        var secondEntered = false
+        let second = Task {
+            secondEntered = true
+            await scheduler.sync()
+        }
+        await settle { secondEntered }
+        XCTAssertEqual(journal.calls, ["set [480]"], "no concurrent write can finish in reverse order")
+        service.releaseSet()
+        await first.value
+        await second.value
+        XCTAssertEqual(journal.calls, ["set [480]", "read", "set [600, 900]", "read"])
+        XCTAssertEqual(service.appliedMinutes, [600, 900])
+        XCTAssertNil(scheduler.lastError)
     }
 
     func testClockOrTimeZoneChangeCallsAgain() async {
-        preferences.wakeEnabled = true
+        setEnabled(true)
         _ = makeScheduler()
         clock.change()
         await settle { journal.calls.count >= 2 }
-        XCTAssertEqual(journal.calls, ["set 480", "read"])
+        XCTAssertEqual(journal.calls, ["set [480]", "read"])
         clock.change()
         await settle { journal.calls.count >= 4 }
-        XCTAssertEqual(journal.calls, ["set 480", "read", "set 480", "read"])
+        XCTAssertEqual(journal.calls, ["set [480]", "read", "set [480]", "read"])
     }
 
     func testSystemClockMonitorListensToBothNotifications() {
@@ -251,7 +369,7 @@ final class WakeSchedulerTests: XCTestCase {
     }
 
     func testErrorIsKeptAndClearedByTheNextCall() async {
-        preferences.wakeEnabled = true
+        setEnabled(true)
         service.wakes = [wakeTime]
         let scheduler = makeScheduler()
         await scheduler.sync()
@@ -272,7 +390,7 @@ final class WakeSchedulerTests: XCTestCase {
         let scheduler = await scheduledAtWakeTime()
         await wake(scheduler, after: 1)
         XCTAssertEqual(log.events, [.scheduledWake])
-        XCTAssertEqual(journal.calls, ["mode", "set 480", "read"])
+        XCTAssertEqual(journal.calls, ["mode", "set [480]", "read"])
     }
 
     func testWakeWindowEdges() async {
@@ -290,33 +408,33 @@ final class WakeSchedulerTests: XCTestCase {
         let scheduler = await scheduledAtWakeTime()
         await wake(scheduler, after: 180)
         XCTAssertEqual(log.events, [.wake])
-        XCTAssertEqual(journal.calls, ["set 480", "read"])
+        XCTAssertEqual(journal.calls, ["set [480]", "read"])
     }
 
     func testWakeThirtySecondsEarlyIsAnOrdinaryWake() async {
         let scheduler = await scheduledAtWakeTime()
         await wake(scheduler, after: -30)
         XCTAssertEqual(log.events, [.wake])
-        XCTAssertEqual(journal.calls, ["set 480", "read"])
+        XCTAssertEqual(journal.calls, ["set [480]", "read"])
     }
 
     func testWakeWithSettingOffIsAnOrdinaryWake() async {
         let scheduler = await scheduledAtWakeTime()
-        preferences.wakeEnabled = false
+        setEnabled(false)
         await settle { journal.calls.contains("read") }
         journal.calls = []
 
         await wake(scheduler, after: 0)
         XCTAssertEqual(log.events, [.wake])
-        XCTAssertEqual(journal.calls, ["set -1", "read"])
+        XCTAssertEqual(journal.calls, ["set []", "read"])
     }
 
     func testWakeWithoutRememberedTimesIsAnOrdinaryWake() async {
-        preferences.wakeEnabled = true
+        setEnabled(true)
         let scheduler = makeScheduler()
         await wake(scheduler, after: 0)
         XCTAssertEqual(log.events, [.wake])
-        XCTAssertEqual(journal.calls, ["set 480", "read"])
+        XCTAssertEqual(journal.calls, ["set [480]", "read"])
     }
 
     func testRecorderHandsTheWakeToTheScheduler() async {
@@ -330,7 +448,7 @@ final class WakeSchedulerTests: XCTestCase {
         monitor.change(asleep: false)
         await settle { journal.calls.contains("read") }
         XCTAssertEqual(log.events, [.sleep, .scheduledWake], "the wake is recorded once")
-        XCTAssertEqual(journal.calls, ["mode", "set 480", "read"])
+        XCTAssertEqual(journal.calls, ["mode", "set [480]", "read"])
     }
 
     // MARK: Remembered times
@@ -348,12 +466,12 @@ final class WakeSchedulerTests: XCTestCase {
 
     /// The setting on and `times` remembered from an earlier run.
     private func remembered(_ times: [Date]) {
-        preferences.wakeEnabled = true
+        setEnabled(true)
         preferences.scheduledWakeTimes = times
     }
 
     func testWakeTimesAreSavedAfterTheAgreementAndReadAtLaunch() async {
-        preferences.wakeEnabled = true
+        setEnabled(true)
         service.wakes = [wakeTime, wakeTime.addingTimeInterval(86_400)]
         let scheduler = makeScheduler()
         await scheduler.sync()
@@ -390,7 +508,7 @@ final class WakeSchedulerTests: XCTestCase {
         XCTAssertEqual(journal.calls, [], "the helper is asked after the check")
 
         await settle { journal.calls.contains("read") }
-        XCTAssertEqual(journal.calls, ["set 480", "read"])
+        XCTAssertEqual(journal.calls, ["set [480]", "read"])
     }
 
     func testRecorderPassesTheSleepToTheScheduler() async {
@@ -412,7 +530,7 @@ final class WakeSchedulerTests: XCTestCase {
         sleep(scheduler, atMinute: 10)
         await wake(scheduler, after: 30 * 60)
         XCTAssertEqual(log.events, [.wake], "the Mac was awake at the scheduled time")
-        XCTAssertEqual(journal.calls, ["set 480", "read"])
+        XCTAssertEqual(journal.calls, ["set [480]", "read"])
     }
 
     func testWakeOnScheduleRecordsNoMiss() async {
@@ -420,7 +538,7 @@ final class WakeSchedulerTests: XCTestCase {
         sleep(scheduler, atMinute: -10)
         await wake(scheduler, after: 60)
         XCTAssertEqual(log.events, [.scheduledWake])
-        XCTAssertEqual(journal.calls, ["mode", "set 480", "read"])
+        XCTAssertEqual(journal.calls, ["mode", "set [480]", "read"])
     }
 
     func testTimeTwoMinutesAgoIsNotYetAMiss() async {
@@ -447,7 +565,7 @@ final class WakeSchedulerTests: XCTestCase {
         await scheduler.appDidLaunch()
         XCTAssertEqual(log.events, [missed])
         XCTAssertEqual(log.times, [wakeTime])
-        XCTAssertEqual(journal.calls, ["set 480", "read"])
+        XCTAssertEqual(journal.calls, ["set [480]", "read"])
         XCTAssertEqual(scheduler.scheduledWakes, service.wakes)
     }
 
@@ -458,7 +576,7 @@ final class WakeSchedulerTests: XCTestCase {
         let scheduler = makeScheduler()
         await scheduler.appDidLaunch()
         XCTAssertEqual(log.events, [], "only the app was closed at the scheduled time")
-        XCTAssertEqual(journal.calls, ["set 480", "read"])
+        XCTAssertEqual(journal.calls, ["set [480]", "read"])
     }
 
     func testTwoMissedTimesAreRecordedOnce() async {
@@ -510,12 +628,12 @@ final class WakeSchedulerTests: XCTestCase {
         let scheduler = makeScheduler()
         sleep(scheduler, atMinute: -10)
         await wake(scheduler, after: 30 * 60)
-        XCTAssertEqual(journal.calls, ["set -1", "read"])
+        XCTAssertEqual(journal.calls, ["set []", "read"])
         XCTAssertEqual(scheduler.scheduledWakes, [])
         XCTAssertEqual(preferences.scheduledWakeTimes, [])
 
         await wake(scheduler, after: 40 * 60)
-        XCTAssertEqual(journal.calls, ["set -1", "read"], "nothing is left to cancel")
+        XCTAssertEqual(journal.calls, ["set []", "read"], "nothing is left to cancel")
         XCTAssertEqual(log.events, [.wake, .wake])
     }
 
@@ -581,20 +699,6 @@ final class WakeSchedulerTests: XCTestCase {
     }
 
     // MARK: Row
-
-    func testRowDetailFollowsTheLastError() async {
-        XCTAssertEqual(WakeRow.detail(lastError: nil), .everyDay)
-        XCTAssertEqual(WakeRow.detail(lastError: "The helper did not respond."), .couldNotSet)
-
-        preferences.wakeEnabled = true
-        service.setError = HelperError.timeout
-        let scheduler = makeScheduler()
-        await scheduler.sync()
-        XCTAssertEqual(WakeRow.detail(lastError: scheduler.lastError), .couldNotSet)
-        service.setError = nil
-        await scheduler.sync()
-        XCTAssertEqual(WakeRow.detail(lastError: scheduler.lastError), .everyDay)
-    }
 
     func testRowTimeIn12And24HourForm() {
         let twelve = Locale(identifier: "en_US")

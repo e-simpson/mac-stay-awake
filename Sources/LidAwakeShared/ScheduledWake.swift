@@ -4,6 +4,13 @@ public enum ScheduledWake {
     /// The `minuteOfDay` that cancels the schedule.
     public static let off = -1
     public static let minutes = 0...1439
+    public static let maximumAlarms = 16
+
+    /// Reject malformed or oversized requests before reading or changing system events.
+    public static func normalizedMinutes(_ values: [Int]) -> [Int]? {
+        guard values.count <= maximumAlarms, values.allSatisfy(minutes.contains) else { return nil }
+        return Array(Set(values)).sorted()
+    }
 
     /// Reads `HH:MM` (two digits each) or `off` into a minute of the day, or `off`; nil when neither.
     public static func minuteOfDay(from text: String) -> Int? {

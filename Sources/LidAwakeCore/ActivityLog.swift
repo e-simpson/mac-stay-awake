@@ -85,7 +85,7 @@ public final class ActivityLog: ActivityLogging, ObservableObject {
 
     public nonisolated static var defaultFileURL: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("com.vladimirpodgornyi.LidAwake", isDirectory: true)
+            .appendingPathComponent(HelperConstants.appBundleIdentifier, isDirectory: true)
             .appendingPathComponent("activity-log.json")
     }
 
@@ -340,6 +340,7 @@ public enum ActivityToken {
         (.thermal, "thermal"),
         (.thermalUnreadable, "thermal-unreadable"),
         (.powerUnreadable, "power-unreadable"),
+        (.powerModeFailed, "power-mode-failed"),
         (.leaseExpired, "lease-expired"),
         (.idle, "idle"),
     ]

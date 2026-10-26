@@ -11,7 +11,7 @@
 	<key>CFBundleIconName</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.vladimirpodgornyi.LidAwake</string>
+	<string>dev.personal.MacStayAwake</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleLocalizations</key>
@@ -22,7 +22,9 @@
 		<string>zh-Hans</string>
 	</array>
 	<key>CFBundleName</key>
-	<string>LidAwake</string>
+	<string>MacStayAwake</string>
+	<key>CFBundleDisplayName</key>
+	<string>MacStayAwake</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

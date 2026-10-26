@@ -134,7 +134,7 @@ public final class HelperClient: ObservableObject, HelperPreparing {
         await perform {
             if let wakes, self.service.registration == .enabled,
                (try? await self.connection.protocolVersion()) == self.expectedVersion {
-                try? await wakes.setScheduledWake(minuteOfDay: ScheduledWake.off)
+                try? await wakes.setScheduledWakes(minutesOfDay: [])
             }
             try await self.service.unregister()
         }
@@ -148,7 +148,7 @@ public final class HelperClient: ObservableObject, HelperPreparing {
         case .notInstalled:
             throw HelperError.notReady(String(localized: "Install the helper to run with the lid closed."))
         case .requiresApproval:
-            throw HelperError.notReady(String(localized: "Allow LidAwake in System Settings > General > Login Items & Extensions."))
+            throw HelperError.notReady(String(localized: "Allow MacStayAwake in System Settings > General > Login Items & Extensions."))
         case .outdated:
             throw HelperError.notReady(String(localized: "The helper could not be updated."))
         case .error(let message):

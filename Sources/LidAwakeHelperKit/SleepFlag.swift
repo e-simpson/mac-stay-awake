@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 public protocol SleepFlag {
     func read() throws -> Bool
@@ -127,6 +128,12 @@ public struct ProcessRunner: CommandRunning {
 
         if finished.wait(timeout: .now() + timeout) == .timedOut {
             process.terminate()
+            if finished.wait(timeout: .now() + 1) == .timedOut {
+                kill(process.processIdentifier, SIGKILL)
+                // Do not let a timed-out writer outlive its rollback or a newer session.
+                finished.wait()
+            }
+            drained.wait()
             throw SleepFlagError.timedOut
         }
         drained.wait()

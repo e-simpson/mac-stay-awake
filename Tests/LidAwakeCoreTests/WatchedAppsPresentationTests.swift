@@ -3,21 +3,6 @@ import LidAwakeShared
 import XCTest
 @testable import LidAwakeCore
 
-final class SleepAndWakeRowTests: XCTestCase {
-    func testWatchedAppsIsTheThirdRowInEveryPosition() {
-        XCTAssertEqual(SleepAndWakeRow.list(mode: .off), [.wakeAt, .sleepWhenIdle(isDimmed: false), .watchedApps])
-        XCTAssertEqual(SleepAndWakeRow.list(mode: .lidClosed), [.wakeAt, .sleepWhenIdle(isDimmed: false), .watchedApps])
-        XCTAssertEqual(SleepAndWakeRow.list(mode: .keepScreenOn), [.wakeAt, .sleepWhenIdle(isDimmed: true), .watchedApps])
-    }
-
-    func testWatchedAppsSitsInTheExpandedSleepAndWakeSection() {
-        for mode in Mode.allCases {
-            XCTAssertTrue(WindowBlock.list(mode: mode, isExpanded: true, showsAppearance: true).contains(.sleepAndWake))
-            XCTAssertFalse(WindowBlock.list(mode: mode, isExpanded: false, showsAppearance: true).contains(.sleepAndWake))
-        }
-    }
-}
-
 final class WatchedAppsSummaryTests: XCTestCase {
     private func name(_ path: String) -> String {
         WatchedApps.name(ofAppAt: path)

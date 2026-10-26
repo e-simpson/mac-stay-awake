@@ -6,7 +6,32 @@ cd "$ROOT"
 
 APP_NAME="LidAwake"
 HELPER_NAME="LidAwakeHelper"
-HELPER_ID="com.vladimirpodgornyi.LidAwake.helper"
+BUNDLE_NAME="MacStayAwake"
+PREVIEW_BUILD="${PREVIEW_BUILD:-0}"
+case "$PREVIEW_BUILD" in
+    0|1) ;;
+    *) echo "ERROR: PREVIEW_BUILD must be 0 or 1." >&2; exit 1 ;;
+esac
+
+# Evaluate the runtime configuration instead of maintaining a second trust policy.
+SIGNING_CONFIG="$(swift -e "$(cat Sources/LidAwakeShared/HelperConstants.swift)"$'\n''print([HelperConstants.appBundleIdentifier, HelperConstants.helperIdentifier, HelperConstants.teamIdentifier, HelperConstants.appRequirement, HelperConstants.helperRequirement].joined(separator: "\t"))')"
+IFS=$'\t' read -r APP_ID HELPER_ID TEAM_ID APP_REQ HELPER_REQ <<< "$SIGNING_CONFIG"
+
+if [[ "$PREVIEW_BUILD" == 0 ]]; then
+    if [[ ! "$TEAM_ID" =~ ^[A-Z0-9]{10}$ ]]; then
+        echo "ERROR: Set your own Apple Developer Team ID in Sources/LidAwakeShared/HelperConstants.swift. See SIGNING.md." >&2
+        exit 1
+    fi
+    IDENTITIES="$(security find-identity -v -p codesigning)"
+    IDENTITY="$(awk -v requested="${SIGN_IDENTITY:-}" -v team="($TEAM_ID)" '
+        index($0, "Developer ID Application:") && index($0, team) &&
+        (requested == "" || $2 == requested || index($0, "\"" requested "\"")) { print $2; exit }
+    ' <<< "$IDENTITIES")"
+    if [[ -z "$IDENTITY" ]]; then
+        echo "ERROR: No matching Developer ID Application identity for your Team $TEAM_ID. See SIGNING.md; PREVIEW_BUILD=1 permits UI-only inspection." >&2
+        exit 1
+    fi
+fi
 
 # Apple silicon and Intel are built and shipped as separate apps, never as one
 # universal binary. Each architecture gets its own SwiftPM scratch directory,
@@ -15,11 +40,11 @@ HELPER_ID="com.vladimirpodgornyi.LidAwake.helper"
 ARCH="${ARCH:-arm64}"
 case "$ARCH" in
     arm64)
-        APP="build/$APP_NAME.app"
+        APP="build/$BUNDLE_NAME.app"
         SCRATCH=".build"
         ;;
     x86_64)
-        APP="build/x86_64/$APP_NAME.app"
+        APP="build/x86_64/$BUNDLE_NAME.app"
         SCRATCH=".build/x86_64"
         ;;
     *)
@@ -27,6 +52,12 @@ case "$ARCH" in
         exit 1
         ;;
 esac
+BUILD_FLAGS=()
+if [[ "$PREVIEW_BUILD" == 1 ]]; then
+    APP="${APP%/*}/preview/$BUNDLE_NAME.app"
+    SCRATCH="$SCRATCH/preview"
+    BUILD_FLAGS=(-Xswiftc -DPERSONAL_PREVIEW)
+fi
 HELPER="$APP/Contents/MacOS/$HELPER_NAME"
 
 # The Swift driver links via clang with --sysroot, from which clang does not
@@ -35,7 +66,7 @@ HELPER="$APP/Contents/MacOS/$HELPER_NAME"
 # The linker's -S drops the debug map, which records the absolute paths of the
 # source directories and object files.
 SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
-swift build -c release --arch "$ARCH" --scratch-path "$SCRATCH" \
+swift build -c release --arch "$ARCH" --scratch-path "$SCRATCH" ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"} \
     -Xswiftc -Xclang-linker -Xswiftc -isysroot \
     -Xswiftc -Xclang-linker -Xswiftc "$SDK_PATH" \
     -Xlinker -S
@@ -72,40 +103,19 @@ for LPROJ in Resources/*.lproj; do
     cp -R "$LPROJ" "$APP/Contents/Resources/"
 done
 
-TEAM_ID="ZW984867UC"
-
-if [[ -n "${SIGN_IDENTITY:-}" ]]; then
-    IDENTITY="$SIGN_IDENTITY"
-else
-    IDENTITY="$(security find-identity -v -p codesigning \
-        | grep -F "Developer ID Application" \
-        | grep -F "($TEAM_ID)" \
-        | head -n 1 \
-        | awk '{print $2}' || true)"
-fi
-
-if [[ -z "$IDENTITY" || "$IDENTITY" == "-" ]]; then
+if [[ "$PREVIEW_BUILD" == 1 ]]; then
+    /usr/libexec/PlistBuddy -c "Add :MacStayAwakePreview bool true" "$APP/Contents/Info.plist"
     codesign --force --sign - --identifier "$HELPER_ID" "$HELPER"
     codesign --force --sign - "$APP"
-    echo "" >&2
-    echo "WARNING: ad-hoc signature. No Developer ID Application certificate for team $TEAM_ID was used." >&2
-    echo "WARNING: The privileged helper will not work in this build." >&2
-    echo "" >&2
+    echo "PREVIEW ONLY: ad-hoc signed; privileged helper registration is disabled." >&2
 else
     codesign --force --sign "$IDENTITY" --options runtime --timestamp --identifier "$HELPER_ID" "$HELPER"
     codesign --force --sign "$IDENTITY" --options runtime --timestamp "$APP"
 
-    # Read the requirements back from the binaries, so the check uses exactly
-    # what the app and the helper enforce at run time.
-    APP_REQ="$(strings "$HELPER" | grep -m 1 -F "identifier \"com.vladimirpodgornyi.LidAwake\" " || true)"
-    HELPER_REQ="$(strings "$APP/Contents/MacOS/$APP_NAME" | grep -m 1 -F "identifier \"$HELPER_ID\" " || true)"
-    if [[ -z "$APP_REQ" || -z "$HELPER_REQ" ]]; then
-        echo "ERROR: code signing requirements not found in the binaries." >&2
-        exit 1
-    fi
+    # These are the exact strict Developer ID requirements used on both XPC peers.
     codesign --verify --strict -R="$HELPER_REQ" "$HELPER"
     codesign --verify --strict -R="$APP_REQ" "$APP"
-    echo "Signatures satisfy the app and helper requirements"
+    echo "Signatures satisfy the personal app and helper requirements for Team $TEAM_ID"
 fi
 
 codesign --verify --strict "$HELPER"

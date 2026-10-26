@@ -264,6 +264,7 @@ struct WatchedAppsScreen: View {
             name: AppDisplayName.of
         )
         WatchedAppsContent(
+            preferences: preferences,
             list: list,
             busy: monitor.busy,
             canAdd: WatchedAppSelection.canAdd(to: preferences.watchedAppPaths),
@@ -306,6 +307,7 @@ final class WatchedAppsKeyboard: ObservableObject {
 }
 
 struct WatchedAppsContent: View {
+    @ObservedObject var preferences: SafetyPreferences
     let list: WatchedAppList
     let busy: Set<String>?
     let canAdd: Bool
@@ -320,6 +322,20 @@ struct WatchedAppsContent: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Text("Sleep when idle")
+                Spacer(minLength: 0)
+                ValueMenu(
+                    label: "Sleep when idle",
+                    selection: $preferences.idleSleepMinutes,
+                    choices: MenuChoices.list(SafetyPreferences.idleSleepChoices, current: preferences.idleSleepMinutes),
+                    title: DurationFormat.minutes
+                )
+                SwitchToggle(title: "Sleep when idle", isOn: $preferences.idleSleepEnabled)
+            }
+            .font(.system(size: 13))
+            .padding(16)
+            Divider()
             ScrollViewReader { proxy in
                 ScrollView(.vertical) {
                     rows
@@ -365,11 +381,6 @@ struct WatchedAppsContent: View {
 
     private var rows: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("While a watched app runs programs it started, such as a coding agent, a build or a script, Sleep when idle keeps counting it as work. Typing in the app and its own windows do not count.")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 14)
             header("Open now")
             ForEach(list.open) { entry in
                 row(entry, state: openState(entry))

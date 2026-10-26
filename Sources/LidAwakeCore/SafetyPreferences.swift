@@ -11,13 +11,15 @@ public final class SafetyPreferences: ObservableObject {
         public static let batteryLimitPercent = "batteryLimitPercent"
         public static let thermalProtectionEnabled = "thermalProtectionEnabled"
         public static let chargingOnlyEnabled = "chargingOnlyEnabled"
+        public static let displayOffWhenClosed = "displayOffWhenClosed"
+        public static let lowPowerWhenClosed = "lowPowerWhenClosed"
         public static let lockOnLidCloseEnabled = "lockOnLidCloseEnabled"
         public static let idleSleepEnabled = "idleSleepEnabled"
         public static let idleSleepMinutes = "idleSleepMinutes"
         public static let watchedAppPaths = "watchedAppPaths"
     }
 
-    public static let timerChoices = [1800, 3600, 7200, 14_400, 28_800]
+    public static let timerChoices = [120, 300, 600, 1800, 3600, 7200, 14_400, 28_800, 57_600, 86_400]
     public static let batteryLimitChoices = [10, 20, 30, 40, 50]
     public static let idleSleepChoices = [10, 20, 30, 60]
 
@@ -38,6 +40,12 @@ public final class SafetyPreferences: ObservableObject {
     }
     @Published public var chargingOnlyEnabled: Bool {
         didSet { save(chargingOnlyEnabled, Key.chargingOnlyEnabled) }
+    }
+    @Published public var displayOffWhenClosed: Bool {
+        didSet { save(displayOffWhenClosed, Key.displayOffWhenClosed) }
+    }
+    @Published public var lowPowerWhenClosed: Bool {
+        didSet { save(lowPowerWhenClosed, Key.lowPowerWhenClosed) }
     }
     @Published public var idleSleepEnabled: Bool {
         didSet { save(idleSleepEnabled, Key.idleSleepEnabled) }
@@ -63,13 +71,15 @@ public final class SafetyPreferences: ObservableObject {
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         defaults.register(defaults: [
-            Key.timerEnabled: false,
+            Key.timerEnabled: true,
             Key.timerSeconds: 7200,
             Key.batteryLimitEnabled: true,
             Key.batteryLimitPercent: 20,
             Key.thermalProtectionEnabled: true,
             Key.chargingOnlyEnabled: false,
-            Key.lockOnLidCloseEnabled: true,
+            Key.displayOffWhenClosed: true,
+            Key.lowPowerWhenClosed: true,
+            Key.lockOnLidCloseEnabled: false,
             Key.idleSleepEnabled: false,
             Key.idleSleepMinutes: 20,
             Key.watchedAppPaths: [String](),
@@ -83,13 +93,15 @@ public final class SafetyPreferences: ObservableObject {
         )
         thermalProtectionEnabled = defaults.bool(forKey: Key.thermalProtectionEnabled)
         chargingOnlyEnabled = defaults.bool(forKey: Key.chargingOnlyEnabled)
+        displayOffWhenClosed = defaults.bool(forKey: Key.displayOffWhenClosed)
+        lowPowerWhenClosed = defaults.bool(forKey: Key.lowPowerWhenClosed)
         lockOnLidCloseEnabled = defaults.bool(forKey: Key.lockOnLidCloseEnabled)
         idleSleepEnabled = defaults.bool(forKey: Key.idleSleepEnabled)
         idleSleepMinutes = Self.clamp(defaults.integer(forKey: Key.idleSleepMinutes), to: SafetySettings.idleSleepRange)
         watchedAppPaths = defaults.stringArray(forKey: Key.watchedAppPaths) ?? []
     }
 
-    /// The timer applies in both modes; the other protections only in Run with Lid Closed.
+    /// The timer applies in both modes; the other protections only in Keep alive.
     public var timerLimit: Int? {
         timerEnabled ? timerSeconds : nil
     }
@@ -99,6 +111,15 @@ public final class SafetyPreferences: ObservableObject {
         !chargingOnlyEnabled
     }
 
+    // An ownership hint only: the helper's protected journal remains authoritative.
+    var helperRecoveryPending: Bool {
+        get { defaults.bool(forKey: "helperRecoveryPending") }
+        set {
+            defaults.set(newValue, forKey: "helperRecoveryPending")
+            defaults.synchronize()
+        }
+    }
+
     public var helperSettings: SafetySettings {
         SafetySettings(
             timerSeconds: timerEnabled ? timerSeconds : 0,
@@ -106,7 +127,8 @@ public final class SafetyPreferences: ObservableObject {
             thermalProtection: thermalProtectionEnabled,
             chargingOnly: chargingOnlyEnabled,
             idleSleepMinutes: idleSleepEnabled ? idleSleepMinutes : 0,
-            watchedAppPaths: idleSleepEnabled ? Self.acceptedWatchedAppPaths(watchedAppPaths) : []
+            watchedAppPaths: idleSleepEnabled ? Self.acceptedWatchedAppPaths(watchedAppPaths) : [],
+            lowPowerWhenClosed: lowPowerWhenClosed
         )
     }
 
@@ -128,7 +150,7 @@ public final class SafetyPreferences: ObservableObject {
         idleSleepEnabled = true
     }
 
-    /// Sleep when idle lasts one Run with Lid Closed session. The session has already ended, so there is
+    /// Sleep when idle lasts one Keep alive session. The session has already ended, so there is
     /// nothing to send to the helper and `changes` does not fire.
     public func endIdleSleepSession() {
         guard idleSleepEnabled else { return }

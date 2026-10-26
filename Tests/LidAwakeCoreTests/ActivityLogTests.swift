@@ -383,7 +383,7 @@ final class ActivityLogTests: XCTestCase {
         let reasons: [(StopReason, String)] = [
             (.timer, "timer"), (.battery, "battery"), (.batteryUnreadable, "battery-unreadable"),
             (.thermal, "thermal"), (.thermalUnreadable, "thermal-unreadable"),
-            (.powerUnreadable, "power-unreadable"), (.leaseExpired, "lease-expired"), (.idle, "idle"),
+            (.powerUnreadable, "power-unreadable"), (.powerModeFailed, "power-mode-failed"), (.leaseExpired, "lease-expired"), (.idle, "idle"),
         ]
         for (reason, word) in reasons {
             XCTAssertEqual(line(.modeOff(.lidClosed, .stopped(reason))), "\(stamp) mode-off mode=lid-closed reason=\(word)")

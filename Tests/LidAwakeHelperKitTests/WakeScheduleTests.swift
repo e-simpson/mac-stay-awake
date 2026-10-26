@@ -58,33 +58,48 @@ final class WakeScheduleTests: XCTestCase {
 
     func testBeforeTheTimeSchedulesTodayAndTomorrow() {
         let events = FakePowerEvents()
-        XCTAssertEqual(scheduler(events, now: local(10, 12, 7, 0)).set(minuteOfDay: 8 * 60), .ok)
+        XCTAssertEqual(scheduler(events, now: local(10, 12, 7, 0)).set(minutesOfDay: [8 * 60]), .ok)
         XCTAssertEqual(events.scheduled, [local(10, 12, 8, 0), local(10, 13, 8, 0)])
         XCTAssertEqual(events.cancelled, [])
     }
 
     func testAfterTheTimeSchedulesTomorrowAndTheDayAfter() {
         let events = FakePowerEvents()
-        XCTAssertEqual(scheduler(events, now: local(10, 12, 9, 0)).set(minuteOfDay: 8 * 60), .ok)
+        XCTAssertEqual(scheduler(events, now: local(10, 12, 9, 0)).set(minutesOfDay: [8 * 60]), .ok)
         XCTAssertEqual(events.scheduled, [local(10, 13, 8, 0), local(10, 14, 8, 0)])
     }
 
     func testTimeWithinAMinuteMovesToTomorrow() {
         let events = FakePowerEvents()
-        XCTAssertEqual(scheduler(events, now: local(10, 12, 7, 59, 30)).set(minuteOfDay: 8 * 60), .ok)
+        XCTAssertEqual(scheduler(events, now: local(10, 12, 7, 59, 30)).set(minutesOfDay: [8 * 60]), .ok)
         XCTAssertEqual(events.scheduled, [local(10, 13, 8, 0), local(10, 14, 8, 0)])
+    }
+
+    func testRefreshPreservesAnEnabledOwnedAlarmInsideTheLeadWindow() {
+        let cases: [(Date, Int, [Date])] = [
+            (local(10, 12, 7, 59, 30), 480, [local(10, 12, 8, 0), local(10, 13, 8, 0)]),
+            // The skipped 02:30 alarm already owns 03:00 when the spring clock jumps.
+            (utc("2026-03-29T00:59:30Z"), 150, [utc("2026-03-29T01:00:00Z"), utc("2026-03-30T00:30:00Z")]),
+        ]
+        for (current, minute, times) in cases {
+            let events = FakePowerEvents(times.map(ours))
+            XCTAssertEqual(scheduler(events, now: current).set(minutesOfDay: [minute]), .ok)
+            XCTAssertEqual(events.cancelled, [], "refresh must not cancel an alarm about to fire")
+            XCTAssertEqual(events.scheduled, [])
+            XCTAssertEqual(events.list, times.map(ours))
+        }
     }
 
     func testMatchingScheduleChangesNothing() {
         let events = FakePowerEvents([ours(local(10, 12, 8, 0)), ours(local(10, 13, 8, 0))])
-        XCTAssertEqual(scheduler(events, now: local(10, 12, 7, 0)).set(minuteOfDay: 8 * 60), .ok)
+        XCTAssertEqual(scheduler(events, now: local(10, 12, 7, 0)).set(minutesOfDay: [8 * 60]), .ok)
         XCTAssertEqual(events.scheduled, [])
         XCTAssertEqual(events.cancelled, [])
     }
 
     func testOldTimeIsReplaced() {
         let events = FakePowerEvents([ours(local(10, 13, 7, 0)), ours(local(10, 14, 7, 0))])
-        XCTAssertEqual(scheduler(events, now: local(10, 12, 9, 0)).set(minuteOfDay: 8 * 60), .ok)
+        XCTAssertEqual(scheduler(events, now: local(10, 12, 9, 0)).set(minutesOfDay: [8 * 60]), .ok)
         XCTAssertEqual(events.cancelled, [local(10, 13, 7, 0), local(10, 14, 7, 0)])
         XCTAssertEqual(events.scheduled, [local(10, 13, 8, 0), local(10, 14, 8, 0)])
         XCTAssertEqual(try scheduler(events, now: local(10, 12, 9, 0)).scheduledWakes(), [local(10, 13, 8, 0), local(10, 14, 8, 0)])
@@ -92,7 +107,7 @@ final class WakeScheduleTests: XCTestCase {
 
     func testMissingWakeIsAdded() {
         let events = FakePowerEvents([ours(local(10, 13, 8, 0))])
-        XCTAssertEqual(scheduler(events, now: local(10, 12, 9, 0)).set(minuteOfDay: 8 * 60), .ok)
+        XCTAssertEqual(scheduler(events, now: local(10, 12, 9, 0)).set(minutesOfDay: [8 * 60]), .ok)
         XCTAssertEqual(events.scheduled, [local(10, 14, 8, 0)])
         XCTAssertEqual(events.cancelled, [])
     }
@@ -103,7 +118,7 @@ final class WakeScheduleTests: XCTestCase {
             PowerEvent(time: local(10, 13, 9, 0), owner: "com.example.other", type: "wake"),
         ]
         let events = FakePowerEvents(foreign + [ours(local(10, 13, 8, 0)), ours(local(10, 14, 8, 0))])
-        XCTAssertEqual(scheduler(events, now: local(10, 12, 9, 0)).set(minuteOfDay: ScheduledWake.off), .ok)
+        XCTAssertEqual(scheduler(events, now: local(10, 12, 9, 0)).set(minutesOfDay: []), .ok)
         XCTAssertEqual(events.cancelled, [local(10, 13, 8, 0), local(10, 14, 8, 0)])
         XCTAssertEqual(events.scheduled, [])
         XCTAssertEqual(events.list, foreign)
@@ -117,7 +132,7 @@ final class WakeScheduleTests: XCTestCase {
             PowerEvent(time: local(10, 13, 7, 0), owner: "pmset", type: "poweron"),
         ]
         let events = FakePowerEvents(foreign)
-        XCTAssertEqual(scheduler(events, now: local(10, 12, 9, 0)).set(minuteOfDay: 8 * 60), .ok)
+        XCTAssertEqual(scheduler(events, now: local(10, 12, 9, 0)).set(minutesOfDay: [8 * 60]), .ok)
         XCTAssertEqual(events.scheduled, [local(10, 13, 8, 0), local(10, 14, 8, 0)])
         XCTAssertEqual(events.cancelled, [])
         XCTAssertEqual(Array(events.list.prefix(foreign.count)), foreign)
@@ -139,34 +154,70 @@ final class WakeScheduleTests: XCTestCase {
     func testMinuteOutOfRangeIsRejected() {
         let events = FakePowerEvents()
         for minute in [1440, -2] {
-            XCTAssertEqual(scheduler(events, now: local(10, 12, 9, 0)).set(minuteOfDay: minute).code, .invalidArgument, "\(minute)")
+            XCTAssertEqual(scheduler(events, now: local(10, 12, 9, 0)).set(minutesOfDay: [minute]).code, .invalidArgument, "\(minute)")
         }
         XCTAssertEqual(events.scheduled, [])
         XCTAssertEqual(events.cancelled, [])
     }
 
-    func testFailedWakeKeepsTheOneAlreadyScheduled() {
+    func testFailedReplacementPreservesPreviouslyScheduledWakes() {
         let events = FakePowerEvents([ours(local(10, 13, 7, 0))])
         events.failingWakes = [local(10, 14, 8, 0)]
-        let result = scheduler(events, now: local(10, 12, 9, 0)).set(minuteOfDay: 8 * 60)
+        let result = scheduler(events, now: local(10, 12, 9, 0)).set(minutesOfDay: [8 * 60])
         XCTAssertEqual(result.code, .wakeScheduleFailed)
         XCTAssertTrue(result.message?.contains("0xE00002C1") == true, result.message ?? "")
         XCTAssertTrue(result.message?.contains("-536870207") == true, result.message ?? "")
         XCTAssertEqual(events.scheduled, [local(10, 13, 8, 0)])
         XCTAssertFalse(events.cancelled.contains(local(10, 13, 8, 0)))
         XCTAssertTrue(events.list.contains(ours(local(10, 13, 8, 0))))
+        XCTAssertEqual(events.cancelled, [], "failed additions must not destroy the previous schedule")
+        XCTAssertTrue(events.list.contains(ours(local(10, 13, 7, 0))))
     }
 
     func testUnreadableEventsChangeNothing() {
         let events = FakePowerEvents()
         events.readFails = true
-        XCTAssertEqual(scheduler(events, now: local(10, 12, 9, 0)).set(minuteOfDay: 8 * 60).code, .wakeScheduleFailed)
+        XCTAssertEqual(scheduler(events, now: local(10, 12, 9, 0)).set(minutesOfDay: [8 * 60]).code, .wakeScheduleFailed)
         XCTAssertEqual(events.scheduled, [])
         XCTAssertThrowsError(try scheduler(events, now: local(10, 12, 9, 0)).scheduledWakes())
     }
 
+    func testMultipleDailyTimesDeduplicateAndReplaceOnlyOwnedEvents() {
+        let foreign = PowerEvent(time: local(10, 12, 8, 0), owner: "other.app", type: "wake")
+        let events = FakePowerEvents([foreign, ours(local(10, 13, 7, 0))])
+        let scheduler = scheduler(events, now: local(10, 12, 7, 0))
+        XCTAssertEqual(scheduler.set(minutesOfDay: [540, 480, 480]), .ok)
+        XCTAssertEqual(events.scheduled, [
+            local(10, 12, 8, 0), local(10, 12, 9, 0),
+            local(10, 13, 8, 0), local(10, 13, 9, 0),
+        ])
+        XCTAssertEqual(events.cancelled, [local(10, 13, 7, 0)])
+        XCTAssertTrue(events.list.contains(foreign))
+        XCTAssertEqual(scheduler.set(minutesOfDay: [480, 540]), .ok)
+        XCTAssertEqual(events.scheduled.count, 4, "unchanged alarms do not create duplicate system events")
+    }
+
+    func testDailyTimesThatCoincideAtDSTScheduleOneEvent() {
+        let events = FakePowerEvents()
+        XCTAssertEqual(scheduler(events, now: local(3, 28, 12, 0)).set(minutesOfDay: [135, 150]), .ok)
+        XCTAssertEqual(events.scheduled, [
+            utc("2026-03-29T01:00:00Z"), utc("2026-03-30T00:15:00Z"), utc("2026-03-30T00:30:00Z"),
+        ])
+    }
+
+    func testOversizedAlarmListIsRejectedBeforeReadingSystemEvents() {
+        let events = FakePowerEvents()
+        events.readFails = true
+        XCTAssertEqual(
+            scheduler(events, now: local(10, 12, 7, 0)).set(minutesOfDay: Array(0...ScheduledWake.maximumAlarms)).code,
+            .invalidArgument
+        )
+        XCTAssertEqual(events.scheduled, [])
+        XCTAssertEqual(events.cancelled, [])
+    }
+
     func testWakeTypeIsTheSystemOne() {
         XCTAssertEqual(WakeSchedule.wakeType, kIOPMAutoWake)
-        XCTAssertEqual(WakeSchedule.owner, "com.vladimirpodgornyi.LidAwake.helper")
+        XCTAssertEqual(WakeSchedule.owner, "dev.personal.MacStayAwake.helper")
     }
 }

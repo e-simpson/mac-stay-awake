@@ -1,7 +1,7 @@
 /* Modes */
 "Off" = "Выкл.";
 "Keep Screen On" = "Не гасить экран";
-"Run with Lid Closed" = "С закрытой крышкой";
+"Keep alive" = "С закрытой крышкой";
 "The Mac sleeps as usual." = "Mac засыпает как обычно.";
 "For stepping away from the desk. Closing the lid still puts the Mac to sleep." = "Чтобы отойти от стола. Если закрыть крышку, Mac всё равно уснёт.";
 "For the road. Keeps working with the lid shut or the screen locked." = "В дорогу. Mac работает с закрытой крышкой и при заблокированном экране.";
@@ -53,7 +53,7 @@
 "Screen lock is not available on this macOS version." = "Блокировка экрана недоступна в этой версии macOS.";
 "Launch at login" = "Запускать при входе";
 "Turn it on in System Settings > General > Login Items & Extensions." = "Включается здесь: «Системные настройки» > «Основные» > «Объекты входа и расширения».";
-"Move LidAwake to the Applications folder to launch it at login." = "Для запуска при входе LidAwake должен лежать в папке «Программы».";
+"Move MacStayAwake to the Applications folder to launch it at login." = "Для запуска при входе MacStayAwake должен лежать в папке «Программы».";
 "Appearance" = "Оформление";
 "Glass" = "Стекло";
 "Solid" = "Плотный";
@@ -64,16 +64,16 @@
 "Settings" = "Настройки";
 "Collapsed" = "Свёрнуто";
 "Expanded" = "Раскрыто";
-"Quit LidAwake" = "Завершить LidAwake";
+"Quit MacStayAwake" = "Завершить MacStayAwake";
 
 /* Helper messages */
 "Permission needed" = "Нужно разрешение";
-"Allow LidAwake in System Settings > General > Login Items & Extensions. The mode turns on as soon as you do." = "Разрешите LidAwake: «Системные настройки» > «Основные» > «Объекты входа и расширения». Режим включится сразу после этого.";
-"Allow LidAwake in System Settings > General > Login Items & Extensions, then choose Run with Lid Closed again." = "Разрешите LidAwake: «Системные настройки» > «Основные» > «Объекты входа и расширения». Затем снова выберите «С закрытой крышкой».";
-"Allow LidAwake in System Settings > General > Login Items & Extensions." = "Разрешите LidAwake: «Системные настройки» > «Основные» > «Объекты входа и расширения».";
-"Move LidAwake to Applications" = "Переместить LidAwake в «Программы»";
-"Run with Lid Closed needs the app in the Applications folder." = "Для режима «С закрытой крышкой» приложение должно лежать в папке «Программы».";
-"LidAwake must be in /Applications to install the helper." = "Чтобы установить помощник, LidAwake должен лежать в папке «Программы».";
+"Allow MacStayAwake in System Settings > General > Login Items & Extensions. The mode turns on as soon as you do." = "Разрешите MacStayAwake: «Системные настройки» > «Основные» > «Объекты входа и расширения». Режим включится сразу после этого.";
+"Allow MacStayAwake in System Settings > General > Login Items & Extensions, then choose Keep alive again." = "Разрешите MacStayAwake: «Системные настройки» > «Основные» > «Объекты входа и расширения». Затем снова выберите «С закрытой крышкой».";
+"Allow MacStayAwake in System Settings > General > Login Items & Extensions." = "Разрешите MacStayAwake: «Системные настройки» > «Основные» > «Объекты входа и расширения».";
+"Move MacStayAwake to Applications" = "Переместить MacStayAwake в «Программы»";
+"Keep alive needs the app in the Applications folder." = "Для режима «С закрытой крышкой» приложение должно лежать в папке «Программы».";
+"MacStayAwake must be in /Applications to install the helper." = "Чтобы установить помощник, MacStayAwake должен лежать в папке «Программы».";
 "The helper did not start" = "Помощник не запустился";
 "Install the helper to run with the lid closed." = "Для работы с закрытой крышкой нужно установить помощник.";
 "The helper could not be installed." = "Не удалось установить помощник.";
@@ -88,8 +88,8 @@
 /* Mode messages and notifications */
 "Could not turn on" = "Не удалось включить";
 "Something went wrong" = "Что-то пошло не так";
-"LidAwake turned off" = "LidAwake выключился";
-"LidAwake was restarted. Turn the mode on again if you need it." = "LidAwake перезапустился. Если режим нужен, включите его снова.";
+"MacStayAwake turned off" = "MacStayAwake выключился";
+"MacStayAwake was restarted. Turn the mode on again if you need it." = "MacStayAwake перезапустился. Если режим нужен, включите его снова.";
 "The timer ran out." = "Время таймера вышло.";
 "The battery dropped below the limit." = "Заряд опустился ниже порога.";
 "The battery dropped to %lld%%." = "Заряд опустился до %lld %%.";
@@ -97,16 +97,16 @@
 "The Mac got too hot." = "Mac перегрелся.";
 "The thermal state could not be read." = "Не удалось узнать температурное состояние.";
 "The power source could not be read." = "Не удалось определить источник питания.";
-"LidAwake closed unexpectedly, so normal sleep was restored." = "LidAwake неожиданно завершился, обычный сон восстановлен.";
+"MacStayAwake closed unexpectedly, so normal sleep was restored." = "MacStayAwake неожиданно завершился, обычный сон восстановлен.";
 "Nothing was working for %lld minutes." = "%lld мин ничего не работало.";
 "Nothing was working for a while." = "Какое-то время ничего не работало.";
-"LidAwake paused" = "LidAwake на паузе";
+"MacStayAwake paused" = "MacStayAwake на паузе";
 "Running on battery. It resumes when you plug in." = "Mac работает от батареи. Режим продолжится после подключения зарядки.";
 
 /* Updates */
 "Check for updates" = "Проверять обновления";
 "Update available" = "Доступно обновление";
-"LidAwake %@ is available. You have %@." = "Вышла версия LidAwake %@. У вас установлена %@.";
+"MacStayAwake %@ is available. You have %@." = "Вышла версия MacStayAwake %@. У вас установлена %@.";
 "Download" = "Скачать";
 
 /* Automatic logout */
@@ -123,8 +123,8 @@
 "Last 200 events · kept only on this Mac" = "Последние 200 событий · только на этом Mac";
 "Clear" = "Очистить";
 "No events yet" = "Событий пока нет";
-"Run with Lid Closed turned on" = "Режим «С закрытой крышкой» включён";
-"Run with Lid Closed turned off" = "Режим «С закрытой крышкой» выключен";
+"Keep alive turned on" = "Режим «С закрытой крышкой» включён";
+"Keep alive turned off" = "Режим «С закрытой крышкой» выключен";
 "Keep Screen On turned on" = "Режим «Не гасить экран» включён";
 "Keep Screen On turned off" = "Режим «Не гасить экран» выключен";
 "Paused" = "Пауза";
@@ -134,7 +134,7 @@
 "Mac woke up" = "Mac проснулся";
 "By you" = "Вручную";
 "On schedule" = "По расписанию";
-"Run with Lid Closed not turned on" = "Режим «С закрытой крышкой» не включён";
+"Keep alive not turned on" = "Режим «С закрытой крышкой» не включён";
 "Not on power" = "Питание не подключено";
 "Mac was on battery or turned off" = "Mac работал от батареи или был выключен";
 "The timer ended after %@." = "Таймер сработал через %@.";
@@ -144,7 +144,7 @@
 "Busiest app: %@" = "Больше всего грузит: %@";
 "Started programs are working" = "Запущенные программы работают";
 "No work detected, counting %lld minutes" = "Работы не видно, отсчёт %lld мин";
-"LidAwake was restarted." = "LidAwake перезапустился.";
+"MacStayAwake was restarted." = "MacStayAwake перезапустился.";
 "Watched apps" = "Программы под наблюдением";
 "Watched Apps" = "Программы под наблюдением";
 "None" = "Нет";

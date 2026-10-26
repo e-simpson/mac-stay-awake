@@ -9,7 +9,7 @@ public protocol StopNotifying: AnyObject {
 }
 
 public enum StopNotice {
-    public static let title = String(localized: "LidAwake turned off")
+    public static let title = String(localized: "MacStayAwake turned off")
 
     public static func body(for record: StopRecord) -> String {
         switch record.reason {
@@ -26,10 +26,12 @@ public enum StopNotice {
             return String(localized: "The Mac got too hot.")
         case .thermalUnreadable:
             return String(localized: "The thermal state could not be read.")
+        case .powerModeFailed:
+            return "Low Power Mode could not be applied or restored. Check recovery before starting another session."
         case .powerUnreadable:
             return String(localized: "The power source could not be read.")
         case .leaseExpired:
-            return String(localized: "LidAwake closed unexpectedly, so normal sleep was restored.")
+            return String(localized: "MacStayAwake closed unexpectedly, so normal sleep was restored.")
         case .idle:
             guard let minutes = record.idleMinutes else {
                 return String(localized: "Nothing was working for a while.")
@@ -40,7 +42,7 @@ public enum StopNotice {
 }
 
 public enum PauseNotice {
-    public static let title = String(localized: "LidAwake paused")
+    public static let title = String(localized: "MacStayAwake paused")
     public static let body = String(localized: "Running on battery. It resumes when you plug in.")
 }
 

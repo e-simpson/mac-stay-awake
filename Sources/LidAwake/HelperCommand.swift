@@ -97,7 +97,7 @@ enum HelperCommand: Equatable {
                 printError("error: the helper uses protocol \(version), this app needs \(HelperConstants.protocolVersion)")
                 return 1
             }
-            try await connection.setScheduledWake(minuteOfDay: minuteOfDay)
+            try await connection.setScheduledWakes(minutesOfDay: minuteOfDay == ScheduledWake.off ? [] : [minuteOfDay])
             print(ScheduledWake.statusField(try await connection.scheduledWakes()))
             return 0
         } catch {

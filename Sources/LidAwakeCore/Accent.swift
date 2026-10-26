@@ -80,7 +80,7 @@ public final class AccentPreference: ObservableObject {
         center: NotificationCenter = .default
     ) {
         self.defaults = defaults
-        theme = defaults.string(forKey: Self.key).flatMap(AccentTheme.init(rawValue:)) ?? .system
+        theme = .system
         if let systemColorsChanged {
             systemColorsObserver = center.publisher(for: systemColorsChanged)
                 .receive(on: DispatchQueue.main)

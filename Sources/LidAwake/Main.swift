@@ -18,11 +18,9 @@ enum Main {
         if CommandLine.arguments.contains(AutoLogoutCommand.flag) {
             exit(AutoLogoutCommand.run())
         }
-        if CommandLine.arguments.contains(UpdateCommand.flag) {
-            Task {
-                exit(await UpdateCommand.run())
-            }
-            dispatchMain()
+        if CommandLine.arguments.contains("--check-update") {
+            FileHandle.standardError.write(Data("Upstream update checks are disabled in MacStayAwake.\n".utf8))
+            exit(64)
         }
         guard let command = HelperCommand(arguments: CommandLine.arguments) else {
             LidAwakeApp.main()

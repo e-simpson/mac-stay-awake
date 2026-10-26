@@ -53,6 +53,8 @@ public final class LidSession {
     private let thermal: ThermalStateReading
     private let idle: IdleWatching
     private let stopReasons: StopReasonStore
+    private let closedPower: ClosedLidPowerManaging
+    private let lidClosed: () -> Bool?
     private let wallClock: () -> Date
 
     public private(set) var ownership: Ownership?
@@ -76,6 +78,8 @@ public final class LidSession {
         thermal: ThermalStateReading,
         idle: IdleWatching,
         stopReasons: StopReasonStore,
+        closedPower: ClosedLidPowerManaging,
+        lidClosed: @escaping () -> Bool? = SystemLidState.read,
         wallClock: @escaping () -> Date = Date.init
     ) {
         self.flag = flag
@@ -86,6 +90,8 @@ public final class LidSession {
         self.thermal = thermal
         self.idle = idle
         self.stopReasons = stopReasons
+        self.closedPower = closedPower
+        self.lidClosed = lidClosed
         self.wallClock = wallClock
     }
 
@@ -105,6 +111,13 @@ public final class LidSession {
             return SessionResult(code: .powerUnreadable, message: Self.powerUnreadableMessage)
         }
 
+        if safety.lowPowerWhenClosed {
+            do {
+                try closedPower.restore()
+            } catch {
+                return .failure(.powerModeFailed, error)
+            }
+        }
         let isSet: Bool
         do {
             isSet = try flag.read()
@@ -114,7 +127,7 @@ public final class LidSession {
 
         if isSet && !marker.isSet {
             begin(.foreign, lease: lease, safety: safety, paused: power == .pause)
-            return .ok
+            return updateClosedPower()
         }
         if power == .pause {
             // A flag left over from an earlier session of ours is released, not kept through the pause.
@@ -123,7 +136,7 @@ public final class LidSession {
                 guard released == .ok else { return released }
             }
             begin(.ours, lease: lease, safety: safety, paused: true)
-            return .ok
+            return updateClosedPower()
         }
 
         // The marker goes first: a crash after it leaves a flag that the next
@@ -144,7 +157,7 @@ public final class LidSession {
             }
         }
         begin(.ours, lease: lease, safety: safety, paused: false)
-        return .ok
+        return updateClosedPower()
     }
 
     public func renew(lease: TimeInterval, safety: SafetySettings) -> SessionResult {
@@ -173,16 +186,13 @@ public final class LidSession {
         } catch {
             return .failure(.flagReadFailed, error)
         }
-        guard !isSet else { return .ok }
+        guard !isSet else { return updateClosedPower() }
         if ownership == .foreign {
-            return takeOver()
+            let result = takeOver()
+            return result == .ok ? updateClosedPower() : result
         }
-        do {
-            try flag.write(true)
-        } catch {
-            return .failure(.flagWriteFailed, error)
-        }
-        return .ok
+        let claimed = claimFlag()
+        return claimed == .ok ? updateClosedPower() : claimed
     }
 
     public func end() -> SessionResult {
@@ -196,9 +206,8 @@ public final class LidSession {
         safety = .off
         isPaused = false
         updateIdleRequirement()
-        // A paused session has already released its flag.
-        guard ended == .ours, !wasPaused else { return .ok }
-        return releaseFlag()
+        // Attempt energy restoration first, but never defeat a safety stop just to retry it.
+        return restorePowerAndSleep(releaseSleep: ended == .ours && !wasPaused)
     }
 
     /// Ends the session when the timer runs out, the Mac gets too hot, the battery reaches its limit,
@@ -235,32 +244,38 @@ public final class LidSession {
         case .pause:
             return isPaused ? nil : pause()
         case .run:
-            return isPaused ? resume() : nil
+            let wasPaused = isPaused
+            if wasPaused {
+                let result = resume()
+                guard result == .ok else { return result }
+            }
+            let result = updateClosedPower()
+            return result == .ok && !wasPaused ? nil : result
         case .unreadable:
             return nil
         }
     }
 
     public func clearLeftover() -> SessionResult {
-        guard !isActive, marker.isSet else { return .ok }
-        return releaseFlag()
+        guard !isActive else { return .ok }
+        return restorePowerAndSleep(releaseSleep: marker.isSet)
     }
 
     /// True while the helper has to stay running: a session is active or a flag it set is still left over.
     public var needsHelper: Bool {
-        isActive || marker.isSet
+        isActive || marker.isSet || closedPower.hasPendingRestore
     }
 
     /// Clears a flag left by an earlier run, at most once per `leftoverRetryInterval`.
     /// Returns nil when there was nothing to do or the last attempt is too recent.
     @discardableResult
     public func retryLeftover() -> SessionResult? {
-        guard !isActive, marker.isSet else { return nil }
+        guard !isActive, marker.isSet || closedPower.hasPendingRestore else { return nil }
         if let lastLeftoverAttempt, clock.now - lastLeftoverAttempt < Self.leftoverRetryInterval {
             return nil
         }
         lastLeftoverAttempt = clock.now
-        return releaseFlag()
+        return clearLeftover()
     }
 
     public func status() -> SessionStatus {
@@ -307,6 +322,31 @@ public final class LidSession {
             return .failure(.stopReasonFailed, error)
         }
         return .ok
+    }
+
+    private func updateClosedPower() -> SessionResult {
+        if !safety.lowPowerWhenClosed {
+            do {
+                try closedPower.restore()
+                return .ok
+            } catch {
+                // Optional recovery must remain visible and retryable without releasing keep-awake.
+                return .failure(.powerModeFailed, error)
+            }
+        }
+        do {
+            guard let closed = lidClosed() else {
+                throw NSError(domain: "LidAwake", code: 1, userInfo: [NSLocalizedDescriptionKey: "The lid state could not be read."])
+            }
+            let apply = isActive && !isPaused && closed
+            try closedPower.update(closed: apply, source: apply ? power.read().source : .unknown)
+            return .ok
+        } catch {
+            try? stopReasons.write(StopRecord(reason: .powerModeFailed, time: wallClock(), batteryPercent: nil))
+            let cleanup = end()
+            let detail = cleanup == .ok ? error.localizedDescription : "\(error.localizedDescription) Recovery pending: \(cleanup.message ?? "power settings could not be restored")"
+            return SessionResult(code: .powerModeFailed, message: detail)
+        }
     }
 
     private static let powerUnreadableMessage = "The power source could not be read."
@@ -375,13 +415,13 @@ public final class LidSession {
     // A foreign flag stays untouched; only our own flag and marker are released.
     private func pause() -> SessionResult {
         guard !isPaused else { return .ok }
-        if ownership == .ours {
-            let released = releaseFlag()
-            guard released == .ok else { return released }
+        let restored = restorePowerAndSleep(releaseSleep: ownership == .ours)
+        if restored == .ok || restored.code == .powerModeFailed {
+            // Sleep was released even if energy recovery remains pending.
+            isPaused = true
+            updateIdleRequirement()
         }
-        isPaused = true
-        updateIdleRequirement()
-        return .ok
+        return restored
     }
 
     private func resume() -> SessionResult {
@@ -462,8 +502,33 @@ public final class LidSession {
         idle.restart()
     }
 
+    private func restorePowerAndSleep(releaseSleep: Bool) -> SessionResult {
+        var energyFailure: SessionResult?
+        do {
+            try closedPower.restore()
+        } catch {
+            energyFailure = .failure(.powerModeFailed, error)
+        }
+        if releaseSleep {
+            let released = releaseFlag()
+            if released != .ok {
+                if let energyFailure {
+                    return SessionResult(code: released.code,
+                        message: "\(released.message ?? "Sleep recovery failed.") \(energyFailure.message ?? "Energy recovery pending.")")
+                }
+                return released
+            }
+        }
+        return energyFailure ?? .ok
+    }
+
     // The marker stays when the flag cannot be cleared, so a later cleanup retries.
     private func releaseFlag() -> SessionResult {
+        do {
+            try marker.validate()
+        } catch {
+            return .failure(.markerFailed, error)
+        }
         do {
             try flag.write(false)
         } catch {

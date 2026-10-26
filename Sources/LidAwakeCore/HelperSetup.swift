@@ -12,13 +12,13 @@ public protocol HelperInstalling: AnyObject {
 
 extension HelperClient: HelperInstalling {}
 
-/// Gets the helper ready when Run with Lid Closed is chosen and starts the mode once it is.
+/// Gets the helper ready when Keep alive is chosen and starts the mode once it is.
 /// Turning Wake at on takes the same path, but agrees the wake with the helper instead.
 @MainActor
 public final class HelperSetup: ObservableObject {
-    /// What the window asks of the user; nil until Run with Lid Closed is chosen and while nothing is needed.
+    /// What the window asks of the user; nil until Keep alive is chosen and while nothing is needed.
     @Published public private(set) var prompt: HelperPrompt?
-    /// True while Run with Lid Closed waits for the helper and will start on its own.
+    /// True while Keep alive waits for the helper and will start on its own.
     @Published public private(set) var isWaiting = false
     /// True when the prompt comes from turning Wake at on rather than from choosing the mode.
     public var isPromptForWake: Bool { goal == .wake }
@@ -79,7 +79,7 @@ public final class HelperSetup: ObservableObject {
     /// the wake with it. The mode is left as it is.
     public func requestWake() async {
         wakeIsPending = true
-        // Run with Lid Closed is already waiting for the same helper and agrees the wake too.
+        // Keep alive is already waiting for the same helper and agrees the wake too.
         guard !isWaiting else { return }
         await requestHelper(for: .wake)
     }

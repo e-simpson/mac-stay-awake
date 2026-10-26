@@ -18,7 +18,7 @@ final class ActivityRowTests: XCTestCase {
     func testModeOn() {
         XCTAssertEqual(
             row(.modeOn(.lidClosed)),
-            ActivityRow(title: "Run with Lid Closed turned on", detail: "By you", symbol: .modeOn)
+            ActivityRow(title: "Keep alive turned on", detail: "By you", symbol: .modeOn)
         )
         XCTAssertEqual(
             row(.modeOn(.keepScreenOn)),
@@ -29,7 +29,7 @@ final class ActivityRowTests: XCTestCase {
     func testModeOff() {
         XCTAssertEqual(
             row(.modeOff(.lidClosed, .user)),
-            ActivityRow(title: "Run with Lid Closed turned off", detail: "By you", symbol: .modeOff)
+            ActivityRow(title: "Keep alive turned off", detail: "By you", symbol: .modeOff)
         )
         XCTAssertEqual(
             row(.modeOff(.keepScreenOn, .user)),
@@ -95,7 +95,7 @@ final class ActivityRowTests: XCTestCase {
         XCTAssertEqual(offDetail(.stopped(.timer, timerSeconds: 4800)), "The timer ended after 1 h 20 min.")
         XCTAssertEqual(
             row(.modeOff(.keepScreenOn, .stopped(.timer, timerSeconds: 1800))).detail,
-            "The timer ended after 30 min."
+            "The timer ended after 30 minutes."
         )
     }
 
@@ -122,7 +122,7 @@ final class ActivityRowTests: XCTestCase {
             "The Mac got too hot.",
             "The thermal state could not be read.",
             "The power source could not be read.",
-            "LidAwake closed unexpectedly, so normal sleep was restored.",
+            "MacStayAwake closed unexpectedly, so normal sleep was restored.",
             "Nothing was working for 20 minutes.",
             "Nothing was working for a while.",
         ]
@@ -143,7 +143,7 @@ final class ActivityRowTests: XCTestCase {
     }
 
     func testPreviousSession() {
-        XCTAssertEqual(offDetail(.previousSession), "LidAwake was restarted.")
+        XCTAssertEqual(offDetail(.previousSession), "MacStayAwake was restarted.")
     }
 
     func testScheduleEvents() {
@@ -153,15 +153,15 @@ final class ActivityRowTests: XCTestCase {
         )
         XCTAssertEqual(
             row(.modeOnBySchedule(.lidClosed)),
-            ActivityRow(title: "Run with Lid Closed turned on", detail: "On schedule", symbol: .modeOn)
+            ActivityRow(title: "Keep alive turned on", detail: "On schedule", symbol: .modeOn)
         )
         XCTAssertEqual(
             row(.modeSkipped(.lidClosed, .notOnPower)),
-            ActivityRow(title: "Run with Lid Closed not turned on", detail: "Not on power", symbol: .skipped)
+            ActivityRow(title: "Keep alive not turned on", detail: "Not on power", symbol: .skipped)
         )
         XCTAssertEqual(
             row(.modeSkipped(.lidClosed, .error(" The helper did not respond.\n"))),
-            ActivityRow(title: "Run with Lid Closed not turned on", detail: "The helper did not respond.", symbol: .skipped)
+            ActivityRow(title: "Keep alive not turned on", detail: "The helper did not respond.", symbol: .skipped)
         )
         XCTAssertEqual(row(.modeSkipped(.lidClosed, .error(""))).detail, "Something went wrong")
     }
@@ -169,7 +169,7 @@ final class ActivityRowTests: XCTestCase {
     func testMissedWake() {
         XCTAssertEqual(
             row(.modeSkipped(.lidClosed, .missed)),
-            ActivityRow(title: "Run with Lid Closed not turned on", detail: "Mac was on battery or turned off", symbol: .skipped)
+            ActivityRow(title: "Keep alive not turned on", detail: "Mac was on battery or turned off", symbol: .skipped)
         )
     }
 

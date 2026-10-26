@@ -15,7 +15,7 @@ public final class AppNapActivity: ActivityHolding {
         guard token == nil else { return }
         token = ProcessInfo.processInfo.beginActivity(
             options: .userInitiatedAllowingIdleSystemSleep,
-            reason: "Renewing the Run with Lid Closed session"
+            reason: "Renewing the Keep alive session"
         )
     }
 

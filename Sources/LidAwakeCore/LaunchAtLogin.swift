@@ -68,7 +68,7 @@ public enum LaunchAtLoginNotice: Equatable {
         case .turnOnInSettings:
             return String(localized: "Turn it on in System Settings > General > Login Items & Extensions.")
         case .moveToApplications:
-            return String(localized: "Move LidAwake to the Applications folder to launch it at login.")
+            return String(localized: "Move MacStayAwake to the Applications folder to launch it at login.")
         }
     }
 }

@@ -53,7 +53,7 @@ final class LaunchAtLoginTests: XCTestCase {
         XCTAssertFalse(store.isInitialized)
         XCTAssertFalse(launch.isEnabled)
         XCTAssertEqual(launch.notice, .moveToApplications)
-        XCTAssertEqual(launch.notice?.text, "Move LidAwake to the Applications folder to launch it at login.")
+        XCTAssertEqual(launch.notice?.text, "Move MacStayAwake to the Applications folder to launch it at login.")
     }
 
     func testFailedFirstRegistrationDoesNotMark() {

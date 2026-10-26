@@ -4,16 +4,8 @@ import LidAwakeShared
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// `--render-window <folder>`: draws the window with default settings in the Off and the
-/// Keep Screen On positions, with the settings collapsed and expanded, Off with the update
-/// banner, Keep Screen On with the automatic logout warning, Off expanded in a window limited
-/// to 600 points, Keep Screen On expanded with both banners, Run with Lid Closed expanded with
-/// Only while charging on, Run with Lid Closed expanded with Sleep when idle on and a made-up
-/// idle state, Run with Lid Closed expanded with Wake at on as well, and Run with Lid Closed expanded
-/// with made-up watched apps, without touching the helper, the login item, the display, the network or the saved settings.
-/// It also draws the content of the wake time popover, the activity log window from made-up
-/// entries, with the log file left alone, and the Watched Apps window with made-up apps, also with
-/// the list in focus and one row chosen.
+/// Renders Normal/Keep alive, daily alarms, and watched apps with inert services.
+/// No helper, display, login-item, network, or saved-setting writes are performed.
 enum WindowSnapshot {
     static let flag = "--render-window"
 
@@ -45,9 +37,11 @@ enum WindowSnapshot {
                 print(file.path)
             }
             for isDark in [false, true] {
-                let file = folder.appendingPathComponent("wake-time-picker-\(isDark ? "dark" : "light").png")
-                try renderWakeTimePicker(isDark: isDark).write(to: file)
-                print(file.path)
+                for populated in [false, true] {
+                    let file = folder.appendingPathComponent("alarms-\(populated ? "populated" : "empty")-\(isDark ? "dark" : "light").png")
+                    try renderAlarms(isDark: isDark, populated: populated).write(to: file)
+                    print(file.path)
+                }
             }
             for shot in LogShot.all {
                 let file = folder.appendingPathComponent(shot.fileName)
@@ -71,110 +65,25 @@ enum WindowSnapshot {
 
     private struct Shot {
         let mode: Mode
-        let isExpanded: Bool
         let isDark: Bool
-        var showsUpdate = false
         var showsAutoLogout = false
         var chargingOnly = false
-        var wakeOn = false
-        var watched: [String] = []
-        /// Turns Sleep when idle on and stands in for the helper's answer.
-        var idle: IdleStatus?
         var maxHeight: CGFloat?
         var name: String?
 
         static let all = [
-            Shot(mode: .off, isExpanded: false, isDark: false),
-            Shot(mode: .off, isExpanded: true, isDark: false),
-            Shot(mode: .off, isExpanded: true, isDark: true),
-            Shot(mode: .keepScreenOn, isExpanded: false, isDark: false),
-            Shot(mode: .keepScreenOn, isExpanded: true, isDark: false),
-            Shot(mode: .off, isExpanded: false, isDark: false, showsUpdate: true),
-            Shot(mode: .keepScreenOn, isExpanded: false, isDark: false, showsAutoLogout: true),
-            Shot(mode: .off, isExpanded: true, isDark: false, maxHeight: 600, name: "off-expanded-short-light.png"),
-            Shot(
-                mode: .keepScreenOn,
-                isExpanded: true,
-                isDark: false,
-                showsUpdate: true,
-                showsAutoLogout: true,
-                name: "screen-expanded-full-light.png"
-            ),
-            Shot(
-                mode: .lidClosed,
-                isExpanded: true,
-                isDark: false,
-                chargingOnly: true,
-                name: "lid-expanded-charging-light.png"
-            ),
-            Shot(
-                mode: .lidClosed,
-                isExpanded: true,
-                isDark: false,
-                idle: idleStatus(.busyApp, holders: ["Example App"]),
-                name: "lid-expanded-idle-app-light.png"
-            ),
-            Shot(
-                mode: .lidClosed,
-                isExpanded: true,
-                isDark: false,
-                idle: idleStatus(.counting, counted: 7),
-                name: "lid-expanded-idle-counting-light.png"
-            ),
-            Shot(
-                mode: .lidClosed,
-                isExpanded: true,
-                isDark: true,
-                idle: idleStatus(.counting, counted: 7),
-                name: "lid-expanded-idle-counting-dark.png"
-            ),
-            Shot(
-                mode: .lidClosed,
-                isExpanded: true,
-                isDark: false,
-                wakeOn: true,
-                idle: idleStatus(.counting, counted: 7),
-                name: "lid-expanded-wake-idle-light.png"
-            ),
-            Shot(
-                mode: .lidClosed,
-                isExpanded: true,
-                isDark: false,
-                watched: WatchedAppsShot.watched,
-                name: "lid-expanded-watched-light.png"
-            ),
-            Shot(
-                mode: .lidClosed,
-                isExpanded: true,
-                isDark: true,
-                watched: WatchedAppsShot.watched,
-                name: "lid-expanded-watched-dark.png"
-            ),
+            Shot(mode: .off, isDark: false),
+            Shot(mode: .off, isDark: true),
+            Shot(mode: .lidClosed, isDark: false),
+            Shot(mode: .lidClosed, isDark: true),
+            Shot(mode: .off, isDark: false, maxHeight: 500, name: "normal-short-light.png"),
+            Shot(mode: .lidClosed, isDark: true, maxHeight: 500, name: "keep-alive-short-dark.png"),
+            Shot(mode: .lidClosed, isDark: false, showsAutoLogout: true, name: "keep-alive-autologout-light.png"),
+            Shot(mode: .lidClosed, isDark: false, chargingOnly: true, name: "keep-alive-charging-light.png"),
         ]
 
-        private static func idleStatus(_ state: IdleState, counted: Int = 0, holders: [String] = []) -> IdleStatus {
-            IdleStatus(
-                state: state,
-                countedMinutes: counted,
-                requiredMinutes: 20,
-                cores: 0.2,
-                inputIdleSeconds: 600,
-                holders: holders
-            )
-        }
-
         var fileName: String {
-            if let name {
-                return name
-            }
-            if showsUpdate {
-                return "off-update-\(isDark ? "dark" : "light").png"
-            }
-            if showsAutoLogout {
-                return "screen-autologout-\(isDark ? "dark" : "light").png"
-            }
-            let position = mode == .off ? "off" : "screen"
-            return "\(position)-\(isExpanded ? "expanded" : "collapsed")-\(isDark ? "dark" : "light").png"
+            name ?? "\(mode == .off ? "normal" : "keep-alive")-\(isDark ? "dark" : "light").png"
         }
 
         var appearance: NSAppearance {
@@ -186,21 +95,16 @@ enum WindowSnapshot {
     private static func render(_ shot: Shot) throws -> Data {
         let appearance = shot.appearance
         // Only read: register(defaults:) stays in memory, so nothing is saved.
-        let defaults = UserDefaults(suiteName: "com.vladimirpodgornyi.LidAwake.window-snapshot")!
-        // An empty string is not a version, so the other shots have no update banner.
-        defaults.register(defaults: [
-            SettingsDisclosurePreference.key: shot.isExpanded,
-            UpdateChecker.latestVersionKey: shot.showsUpdate ? "9.9.9" : "",
-        ])
+        let defaults = UserDefaults(suiteName: "\(HelperConstants.appBundleIdentifier).window-snapshot")!
         // SafetyPreferences registers its own defaults over these, so the setting goes in the
         // argument domain, which is searched first and kept only in memory.
         let arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
         var shotArguments = arguments
         shotArguments[SafetyPreferences.Key.chargingOnlyEnabled] = shot.chargingOnly
-        shotArguments[SafetyPreferences.Key.idleSleepEnabled] = shot.idle != nil
+        shotArguments[SafetyPreferences.Key.idleSleepEnabled] = false
         shotArguments[SafetyPreferences.Key.idleSleepMinutes] = 20
-        shotArguments[WakePreferences.Key.wakeEnabled] = shot.wakeOn
-        shotArguments[SafetyPreferences.Key.watchedAppPaths] = shot.watched
+        shotArguments[WakePreferences.Key.wakeEnabled] = false
+        shotArguments[SafetyPreferences.Key.watchedAppPaths] = []
         shotArguments[WakePreferences.Key.wakeMinuteOfDay] = WakePreferences.defaultMinuteOfDay
         UserDefaults.standard.setVolatileDomain(shotArguments, forName: UserDefaults.argumentDomain)
         defer { UserDefaults.standard.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain) }
@@ -213,7 +117,8 @@ enum WindowSnapshot {
             notifier: inert,
             activity: inert,
             powerSourceMonitor: inert,
-            lidMonitor: inert
+            lidMonitor: inert,
+            brightness: SnapshotBrightness()
         )
         // The display assertion and the helper are inert, so selecting a mode keeps nothing awake.
         Task { try? await controller.select(shot.mode) }
@@ -222,15 +127,6 @@ enum WindowSnapshot {
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
         }
         guard controller.mode == shot.mode else { throw CocoaError(.fileWriteUnknown) }
-        // The helper is never ready here, so the scheduler makes no call.
-        let wake = WakeScheduler(
-            preferences: WakePreferences(defaults: defaults),
-            helper: inert,
-            service: inert,
-            mode: controller,
-            log: inert,
-            clockMonitor: inert
-        )
         let content = ContentView(
             controller: controller,
             preferences: controller.preferences,
@@ -238,22 +134,17 @@ enum WindowSnapshot {
             launchAtLogin: LaunchAtLogin(
                 service: inert,
                 store: inert,
-                bundleURL: URL(fileURLWithPath: "/Applications/LidAwake.app")
+                bundleURL: URL(fileURLWithPath: "/Applications/MacStayAwake.app")
             ),
             accent: AccentPreference(defaults: defaults),
-            windowStyle: WindowAppearancePreference(defaults: defaults),
-            disclosure: SettingsDisclosurePreference(defaults: defaults),
-            updates: UpdateChecker(defaults: defaults, source: inert),
             // The other shots do not depend on the setting of this Mac.
             autoLogout: AutoLogoutMonitor(
                 source: FixedAutoLogout(delay: shot.showsAutoLogout ? 3600 : nil),
                 defaults: defaults
             ),
-            wake: wake,
-            wakePreferences: wake.preferences,
-            idleSource: FixedIdleStatus(status: shot.idle),
             openActivityLog: {},
             openWatchedApps: {},
+            openWakeAlarms: {},
             // The offscreen window has no screen, so the limit is set here or not at all.
             heightLimit: .fixed(shot.maxHeight)
         )
@@ -283,33 +174,11 @@ enum WindowSnapshot {
 
     /// The popover's own frame is drawn by the system and is not in the picture.
     @MainActor
-    private static func renderWakeTimePicker(isDark: Bool) throws -> Data {
-        let appearance = NSAppearance(named: isDark ? .darkAqua : .aqua)!
-        let host = NSHostingView(rootView: WakeTimePicker(minuteOfDay: .constant(WakePreferences.defaultMinuteOfDay)))
-        let window = SnapshotWindow(
-            contentRect: NSRect(x: -10_000, y: -10_000, width: 100, height: 40),
-            styleMask: .borderless,
-            backing: .buffered,
-            defer: false
-        )
-        window.isReleasedWhenClosed = false
-        window.appearance = appearance
-        window.contentView = host
-        window.setContentSize(host.fittingSize)
-        window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
-        window.makeKeyAndOrderFront(nil)
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
-        host.layoutSubtreeIfNeeded()
-        defer { window.close() }
-        return try png(of: host, appearance: appearance)
-    }
-
-    @MainActor
     private static func render(_ shot: LogShot) throws -> Data {
         let content = ActivityLogContent(
             entries: shot.isEmpty ? [] : LogShot.entries,
             now: LogShot.now,
-            accent: Palette.accent(.blue),
+            accent: Palette.accent(.system),
             clear: {}
         )
         let host = NSHostingView(rootView: content)
@@ -346,10 +215,11 @@ enum WindowSnapshot {
             hasKeys: isChosen
         )
         let content = WatchedAppsContent(
+            preferences: SafetyPreferences(defaults: UserDefaults(suiteName: "MacStayAwake.snapshot-watched")!),
             list: list,
             busy: WatchedAppsShot.busy,
             canAdd: true,
-            accent: Palette.accent(.blue),
+            accent: Palette.accent(.system),
             // The made-up apps have no icons of their own.
             icon: { _ in NSWorkspace.shared.icon(for: .applicationBundle) },
             keyboard: keyboard,
@@ -377,6 +247,47 @@ enum WindowSnapshot {
         window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
         window.makeKeyAndOrderFront(nil)
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
+        host.layoutSubtreeIfNeeded()
+        defer { window.close() }
+        return try png(of: host, appearance: appearance)
+    }
+
+    @MainActor
+    private static func renderAlarms(isDark: Bool, populated: Bool) throws -> Data {
+        let defaults = UserDefaults(suiteName: "MacStayAwake.snapshot-alarms-\(populated)")!
+        let alarms = populated ? [
+            WakeAlarm(minuteOfDay: 480, isEnabled: true),
+            WakeAlarm(minuteOfDay: 750),
+            WakeAlarm(minuteOfDay: 1200, isEnabled: true),
+        ] : []
+        defaults.register(defaults: [WakePreferences.Key.alarms: try JSONEncoder().encode(alarms)])
+        let preferences = WakePreferences(defaults: defaults)
+        let inert = Inert()
+        let controller = ModeController(
+            displayAssertion: inert, helper: inert, sessions: inert,
+            preferences: SafetyPreferences(defaults: defaults), notifier: inert, activity: inert,
+            powerSourceMonitor: inert, lidMonitor: inert, brightness: SnapshotBrightness()
+        )
+        let scheduler = WakeScheduler(
+            preferences: preferences, helper: inert, service: inert, mode: controller,
+            log: inert, clockMonitor: inert
+        )
+        let content = WakeAlarmsView(
+            preferences: preferences, scheduler: scheduler,
+            setup: HelperSetup(helper: inert, selectMode: { _ in }), accent: AccentPreference(defaults: defaults)
+        )
+        let host = NSHostingView(rootView: content)
+        host.sizingOptions = []
+        let appearance = NSAppearance(named: isDark ? .darkAqua : .aqua)!
+        let window = SnapshotWindow(
+            contentRect: NSRect(x: -10_000, y: -10_000, width: 420, height: 360),
+            styleMask: .borderless, backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.appearance = appearance
+        window.contentView = host
+        window.makeKeyAndOrderFront(nil)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.3))
         host.layoutSubtreeIfNeeded()
         defer { window.close() }
         return try png(of: host, appearance: appearance)
@@ -500,15 +411,6 @@ private struct FixedAutoLogout: AutoLogoutSource {
 }
 
 /// Answers as the helper would, or fails like a helper that cannot be reached.
-private struct FixedIdleStatus: IdleStatusReading {
-    let status: IdleStatus?
-
-    func idleStatus() async throws -> IdleStatus {
-        guard let status else { throw CancellationError() }
-        return status
-    }
-}
-
 private final class ActiveLookingApplication: NSApplication {
     override var isActive: Bool { true }
 }
@@ -518,11 +420,20 @@ private final class SnapshotWindow: NSWindow {
     override var canBecomeKey: Bool { true }
 }
 
+/// Snapshot rendering must never read or change the real display brightness.
+@MainActor
+private struct SnapshotBrightness: DisplayBrightnessControlling {
+    func sampleWhileOpen() -> DisplayBrightnessResult { .sampled }
+    func close() -> DisplayBrightnessResult { .dimmed }
+    func restore() -> DisplayBrightnessResult { .unchanged }
+}
+
 /// Stands in for everything outside the window, so drawing it has no effect.
 @MainActor
 private final class Inert: PowerAssertion, HelperPreparing, HelperInstalling, LidSessionService, StopNotifying,
-    ActivityHolding, PowerSourceMonitoring, LidMonitoring, LoginItemService, LaunchAtLoginStore, ReleaseSource,
+    ActivityHolding, PowerSourceMonitoring, LidMonitoring, LoginItemService, LaunchAtLoginStore,
     ScheduledWakeService, ActivityLogging, ClockChangeMonitoring {
+    nonisolated var isClosed: Bool? { false }
     nonisolated var isHeld: Bool { false }
     nonisolated func acquire() throws {}
     nonisolated func release() {}
@@ -553,16 +464,14 @@ private final class Inert: PowerAssertion, HelperPreparing, HelperInstalling, Li
     nonisolated func start(_ handler: @escaping () -> Void) {}
     nonisolated func start(_ handler: @escaping (_ closed: Bool) -> Void) {}
 
-    nonisolated var status: LoginItemStatus { .enabled }
+    nonisolated var status: LoginItemStatus { .notRegistered }
     nonisolated func register() throws {}
     nonisolated func unregister() throws {}
 
-    nonisolated func setScheduledWake(minuteOfDay: Int) async throws {}
+    nonisolated func setScheduledWakes(minutesOfDay: [Int]) async throws {}
     nonisolated func scheduledWakes() async throws -> [Date] { [] }
 
     func record(_ event: ActivityEvent, at time: Date?) {}
-
-    nonisolated func latestRelease() async throws -> ReleaseLookup { throw CancellationError() }
 
     nonisolated var isInitialized: Bool {
         get { true }

@@ -3,7 +3,7 @@ import LidAwakeShared
 
 /// Which protections the window offers for a mode.
 public enum SafetyLayout: Equatable {
-    /// Off and Run with Lid Closed: every protection can be changed.
+    /// Off and Keep alive: every protection can be changed.
     case all
     /// Keep Screen On: only the timer applies; the rest is shown dimmed.
     case timerOnly
@@ -33,9 +33,12 @@ public enum OpeningFocus {
 }
 
 public enum StatusLine {
-    /// The text next to the app name; nil when there is nothing to show.
-    public static func text(mode: Mode, isPaused: Bool, timerRemaining: TimeInterval?, battery: BatteryLevel) -> String? {
-        let timer = timerRemaining.map { String(localized: "\(DurationFormat.remaining(Int($0.rounded(.up)))) left") }
+    /// The active mode subtitle; nil when there is nothing to show.
+    public static func text(mode: Mode, isPaused: Bool, timerRemaining: TimeInterval?, battery: BatteryLevel, powerSource: PowerSource, thermal: ThermalState?) -> String? {
+        let timer = timerRemaining.map { seconds in
+            let minutes = max(0, Int((seconds / 60).rounded(.up)))
+            return String(localized: "\(minutes / 60)h \(minutes % 60)m left")
+        }
         switch mode {
         case .off:
             return nil
@@ -43,14 +46,26 @@ public enum StatusLine {
             return timer ?? String(localized: "Screen stays on")
         case .lidClosed:
             if isPaused {
-                return String(localized: "Paused · on battery")
+                return [String(localized: "Paused · on battery"), thermal.map(thermalText)]
+                    .compactMap { $0 }.joined(separator: " · ")
             }
-            let parts = [timer, batteryText(battery)].compactMap { $0 }
+            let parts = [timer, batteryText(battery, source: powerSource), thermal.map(thermalText)].compactMap { $0 }
             return parts.isEmpty ? nil : parts.joined(separator: " · ")
         }
     }
 
-    private static func batteryText(_ battery: BatteryLevel) -> String? {
+    private static func thermalText(_ thermal: ThermalState) -> String {
+        switch thermal {
+        case .nominal: return String(localized: "Nominal thermals")
+        case .fair: return String(localized: "Fair thermals")
+        case .serious: return String(localized: "Serious thermals")
+        case .critical: return String(localized: "Critical thermals")
+        case .unknown: return String(localized: "Unknown thermals")
+        }
+    }
+
+    private static func batteryText(_ battery: BatteryLevel, source: PowerSource) -> String? {
+        if battery != .none && source == .ac { return String(localized: "Charging") }
         switch battery {
         case .percent(let percent): return String(localized: "Battery \(percent)%")
         case .unknown: return String(localized: "Battery unknown")
@@ -69,7 +84,7 @@ public enum MessageKind: Equatable {
     case info
 }
 
-/// A message about the helper after Run with Lid Closed was chosen, with the action it offers.
+/// A message about the helper after Keep alive was chosen, with the action it offers.
 public enum HelperPrompt: Equatable {
     case approval
     /// The approval did not come in time and the mode will not start on its own any more.
@@ -92,7 +107,7 @@ public enum HelperPrompt: Equatable {
     public var title: String {
         switch self {
         case .approval, .approvalExpired: return String(localized: "Permission needed")
-        case .moveToApplications: return String(localized: "Move LidAwake to Applications")
+        case .moveToApplications: return String(localized: "Move MacStayAwake to Applications")
         case .failed: return String(localized: "The helper did not start")
         }
     }
@@ -105,17 +120,17 @@ public enum HelperPrompt: Equatable {
     public func text(forWake: Bool) -> String {
         switch self {
         case .approval where forWake, .approvalExpired where forWake:
-            return String(localized: "Allow LidAwake in System Settings > General > Login Items & Extensions.")
+            return String(localized: "Allow MacStayAwake in System Settings > General > Login Items & Extensions.")
         case .approval:
             return String(
-                localized: "Allow LidAwake in System Settings > General > Login Items & Extensions. The mode turns on as soon as you do."
+                localized: "Allow MacStayAwake in System Settings > General > Login Items & Extensions. The mode turns on as soon as you do."
             )
         case .approvalExpired:
             return String(
-                localized: "Allow LidAwake in System Settings > General > Login Items & Extensions, then choose Run with Lid Closed again."
+                localized: "Allow MacStayAwake in System Settings > General > Login Items & Extensions, then choose Keep alive again."
             )
         case .moveToApplications:
-            return String(localized: "Run with Lid Closed needs the app in the Applications folder.")
+            return String(localized: "Keep alive needs the app in the Applications folder.")
         case .failed(let message):
             return message
         }
@@ -144,7 +159,7 @@ public enum ModeMessage: Equatable {
     case couldNotTurnOn(String)
     /// A mode ended on its own and the helper or the app gave the reason.
     case turnedOff(String)
-    /// Run with Lid Closed ended because the helper stopped answering or failed.
+    /// Keep alive ended because the helper stopped answering or failed.
     case turnedOffWithError(String)
     /// The helper failed at something other than starting or keeping a mode.
     case failed(String)
@@ -161,7 +176,7 @@ public enum ModeMessage: Equatable {
     public var title: String {
         switch self {
         case .couldNotTurnOn: return String(localized: "Could not turn on")
-        case .turnedOff, .turnedOffWithError, .restarted: return String(localized: "LidAwake turned off")
+        case .turnedOff, .turnedOffWithError, .restarted: return String(localized: "MacStayAwake turned off")
         case .failed: return String(localized: "Something went wrong")
         }
     }
@@ -171,7 +186,7 @@ public enum ModeMessage: Equatable {
         case .couldNotTurnOn(let text), .turnedOff(let text), .turnedOffWithError(let text), .failed(let text):
             return text
         case .restarted:
-            return String(localized: "LidAwake was restarted. Turn the mode on again if you need it.")
+            return String(localized: "MacStayAwake was restarted. Turn the mode on again if you need it.")
         }
     }
 }
@@ -273,11 +288,16 @@ public enum DurationFormat {
     /// The label of a timer choice in the menu.
     public static func choice(_ seconds: Int) -> String {
         switch seconds {
-        case 1800: return String(localized: "30 min")
+        case 120: return String(localized: "2 minutes")
+        case 300: return String(localized: "5 minutes")
+        case 600: return String(localized: "10 minutes")
+        case 1800: return String(localized: "30 minutes")
         case 3600: return String(localized: "1 hour")
         case 7200: return String(localized: "2 hours")
         case 14_400: return String(localized: "4 hours")
         case 28_800: return String(localized: "8 hours")
+        case 57_600: return String(localized: "16 hours")
+        case 86_400: return String(localized: "24 hours")
         default: return remaining(seconds)
         }
     }

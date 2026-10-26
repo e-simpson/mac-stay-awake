@@ -1,7 +1,7 @@
 /* Modes */
 "Off" = "Aus";
 "Keep Screen On" = "Bildschirm anlassen";
-"Run with Lid Closed" = "Mit geschlossenem Deckel";
+"Keep alive" = "Mit geschlossenem Deckel";
 "The Mac sleeps as usual." = "Der Mac schläft wie gewohnt.";
 "For stepping away from the desk. Closing the lid still puts the Mac to sleep." = "Zum kurzen Weggehen vom Schreibtisch. Beim Zuklappen schläft der Mac trotzdem ein.";
 "For the road. Keeps working with the lid shut or the screen locked." = "Für unterwegs. Läuft weiter bei geschlossenem Deckel oder gesperrtem Bildschirm.";
@@ -53,7 +53,7 @@
 "Screen lock is not available on this macOS version." = "Die Bildschirmsperre ist in dieser macOS-Version nicht verfügbar.";
 "Launch at login" = "Bei der Anmeldung öffnen";
 "Turn it on in System Settings > General > Login Items & Extensions." = "Einschalten unter Systemeinstellungen > Allgemein > Anmeldeobjekte & Erweiterungen.";
-"Move LidAwake to the Applications folder to launch it at login." = "Zum Öffnen bei der Anmeldung muss LidAwake im Ordner „Programme“ liegen.";
+"Move MacStayAwake to the Applications folder to launch it at login." = "Zum Öffnen bei der Anmeldung muss MacStayAwake im Ordner „Programme“ liegen.";
 "Appearance" = "Erscheinungsbild";
 "Glass" = "Glas";
 "Solid" = "Deckend";
@@ -64,16 +64,16 @@
 "Settings" = "Einstellungen";
 "Collapsed" = "Eingeklappt";
 "Expanded" = "Ausgeklappt";
-"Quit LidAwake" = "LidAwake beenden";
+"Quit MacStayAwake" = "MacStayAwake beenden";
 
 /* Helper messages */
 "Permission needed" = "Erlaubnis erforderlich";
-"Allow LidAwake in System Settings > General > Login Items & Extensions. The mode turns on as soon as you do." = "Erlaube LidAwake unter Systemeinstellungen > Allgemein > Anmeldeobjekte & Erweiterungen. Danach schaltet sich der Modus sofort ein.";
-"Allow LidAwake in System Settings > General > Login Items & Extensions, then choose Run with Lid Closed again." = "Erlaube LidAwake unter Systemeinstellungen > Allgemein > Anmeldeobjekte & Erweiterungen und wähle danach erneut „Mit geschlossenem Deckel“.";
-"Allow LidAwake in System Settings > General > Login Items & Extensions." = "Erlaube LidAwake unter Systemeinstellungen > Allgemein > Anmeldeobjekte & Erweiterungen.";
-"Move LidAwake to Applications" = "LidAwake in „Programme“ bewegen";
-"Run with Lid Closed needs the app in the Applications folder." = "Für „Mit geschlossenem Deckel“ muss die App im Ordner „Programme“ liegen.";
-"LidAwake must be in /Applications to install the helper." = "Zum Installieren des Hilfsprogramms muss LidAwake im Ordner „Programme“ liegen.";
+"Allow MacStayAwake in System Settings > General > Login Items & Extensions. The mode turns on as soon as you do." = "Erlaube MacStayAwake unter Systemeinstellungen > Allgemein > Anmeldeobjekte & Erweiterungen. Danach schaltet sich der Modus sofort ein.";
+"Allow MacStayAwake in System Settings > General > Login Items & Extensions, then choose Keep alive again." = "Erlaube MacStayAwake unter Systemeinstellungen > Allgemein > Anmeldeobjekte & Erweiterungen und wähle danach erneut „Mit geschlossenem Deckel“.";
+"Allow MacStayAwake in System Settings > General > Login Items & Extensions." = "Erlaube MacStayAwake unter Systemeinstellungen > Allgemein > Anmeldeobjekte & Erweiterungen.";
+"Move MacStayAwake to Applications" = "MacStayAwake in „Programme“ bewegen";
+"Keep alive needs the app in the Applications folder." = "Für „Mit geschlossenem Deckel“ muss die App im Ordner „Programme“ liegen.";
+"MacStayAwake must be in /Applications to install the helper." = "Zum Installieren des Hilfsprogramms muss MacStayAwake im Ordner „Programme“ liegen.";
 "The helper did not start" = "Das Hilfsprogramm ist nicht gestartet";
 "Install the helper to run with the lid closed." = "Für den Betrieb mit geschlossenem Deckel muss das Hilfsprogramm installiert sein.";
 "The helper could not be installed." = "Das Hilfsprogramm konnte nicht installiert werden.";
@@ -88,8 +88,8 @@
 /* Mode messages and notifications */
 "Could not turn on" = "Einschalten fehlgeschlagen";
 "Something went wrong" = "Etwas ist schiefgelaufen";
-"LidAwake turned off" = "LidAwake wurde ausgeschaltet";
-"LidAwake was restarted. Turn the mode on again if you need it." = "LidAwake wurde neu gestartet. Schalte den Modus bei Bedarf wieder ein.";
+"MacStayAwake turned off" = "MacStayAwake wurde ausgeschaltet";
+"MacStayAwake was restarted. Turn the mode on again if you need it." = "MacStayAwake wurde neu gestartet. Schalte den Modus bei Bedarf wieder ein.";
 "The timer ran out." = "Der Timer ist abgelaufen.";
 "The battery dropped below the limit." = "Der Akkustand ist unter die Grenze gefallen.";
 "The battery dropped to %lld%%." = "Der Akkustand ist auf %lld %% gefallen.";
@@ -97,16 +97,16 @@
 "The Mac got too hot." = "Der Mac ist zu heiß geworden.";
 "The thermal state could not be read." = "Der Temperaturzustand konnte nicht gelesen werden.";
 "The power source could not be read." = "Die Stromquelle konnte nicht gelesen werden.";
-"LidAwake closed unexpectedly, so normal sleep was restored." = "LidAwake wurde unerwartet beendet. Der normale Ruhezustand ist wiederhergestellt.";
+"MacStayAwake closed unexpectedly, so normal sleep was restored." = "MacStayAwake wurde unerwartet beendet. Der normale Ruhezustand ist wiederhergestellt.";
 "Nothing was working for %lld minutes." = "Seit %lld Minuten lief nichts mehr.";
 "Nothing was working for a while." = "Es lief längere Zeit nichts mehr.";
-"LidAwake paused" = "LidAwake pausiert";
+"MacStayAwake paused" = "MacStayAwake pausiert";
 "Running on battery. It resumes when you plug in." = "Akkubetrieb. Es geht weiter, sobald das Netzteil angeschlossen ist.";
 
 /* Updates */
 "Check for updates" = "Nach Updates suchen";
 "Update available" = "Update verfügbar";
-"LidAwake %@ is available. You have %@." = "LidAwake %@ ist verfügbar. Installiert ist %@.";
+"MacStayAwake %@ is available. You have %@." = "MacStayAwake %@ ist verfügbar. Installiert ist %@.";
 "Download" = "Laden";
 
 /* Automatic logout */
@@ -123,8 +123,8 @@
 "Last 200 events · kept only on this Mac" = "Die letzten 200 Ereignisse · nur auf diesem Mac";
 "Clear" = "Löschen";
 "No events yet" = "Noch keine Ereignisse";
-"Run with Lid Closed turned on" = "„Mit geschlossenem Deckel“ eingeschaltet";
-"Run with Lid Closed turned off" = "„Mit geschlossenem Deckel“ ausgeschaltet";
+"Keep alive turned on" = "„Mit geschlossenem Deckel“ eingeschaltet";
+"Keep alive turned off" = "„Mit geschlossenem Deckel“ ausgeschaltet";
 "Keep Screen On turned on" = "„Bildschirm anlassen“ eingeschaltet";
 "Keep Screen On turned off" = "„Bildschirm anlassen“ ausgeschaltet";
 "Paused" = "Pausiert";
@@ -134,7 +134,7 @@
 "Mac woke up" = "Mac aufgewacht";
 "By you" = "Manuell";
 "On schedule" = "Nach Zeitplan";
-"Run with Lid Closed not turned on" = "„Mit geschlossenem Deckel“ nicht eingeschaltet";
+"Keep alive not turned on" = "„Mit geschlossenem Deckel“ nicht eingeschaltet";
 "Not on power" = "Kein Netzteil angeschlossen";
 "Mac was on battery or turned off" = "Mac lief im Akkubetrieb oder war ausgeschaltet";
 "The timer ended after %@." = "Der Timer ist nach %@ abgelaufen.";
@@ -144,7 +144,7 @@
 "Busiest app: %@" = "Aktivste App: %@";
 "Started programs are working" = "Gestartete Programme arbeiten";
 "No work detected, counting %lld minutes" = "Keine Arbeit erkannt, es werden %lld Minuten gezählt";
-"LidAwake was restarted." = "LidAwake wurde neu gestartet.";
+"MacStayAwake was restarted." = "MacStayAwake wurde neu gestartet.";
 "Watched apps" = "Beobachtete Apps";
 "Watched Apps" = "Beobachtete Apps";
 "None" = "Keine";

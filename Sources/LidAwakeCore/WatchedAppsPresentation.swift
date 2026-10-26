@@ -2,20 +2,6 @@ import Darwin
 import Foundation
 import LidAwakeShared
 
-/// The rows of the SLEEP AND WAKE section, top to bottom.
-public enum SleepAndWakeRow: Hashable {
-    case wakeAt
-    /// Dimmed where the mode cannot use it.
-    case sleepWhenIdle(isDimmed: Bool)
-    /// Opens the Watched Apps window; works in every position.
-    case watchedApps
-
-    public static func list(mode: Mode) -> [SleepAndWakeRow] {
-        [.wakeAt, .sleepWhenIdle(isDimmed: SafetyLayout(mode: mode) == .timerOnly), .watchedApps]
-    }
-}
-
-/// The line under Watched apps: the chosen apps in the order they were chosen.
 public enum WatchedAppsSummary {
     public static func text(paths: [String], name: (String) -> String) -> String {
         let names = paths.map(name).filter { !$0.isEmpty }

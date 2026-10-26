@@ -6,61 +6,105 @@ final class StatusLineTests: XCTestCase {
     private let eightyMinutes: TimeInterval = 80 * 60
 
     func testOffShowsNothing() {
-        XCTAssertNil(StatusLine.text(mode: .off, isPaused: false, timerRemaining: nil, battery: .percent(82)))
+        XCTAssertNil(StatusLine.text(mode: .off, isPaused: false, timerRemaining: nil, battery: .percent(82), powerSource: .battery, thermal: .nominal))
     }
 
     func testKeepScreenOnWithoutTimer() {
         XCTAssertEqual(
-            StatusLine.text(mode: .keepScreenOn, isPaused: false, timerRemaining: nil, battery: .percent(82)),
+            StatusLine.text(mode: .keepScreenOn, isPaused: false, timerRemaining: nil, battery: .percent(82), powerSource: .battery, thermal: .nominal),
             "Screen stays on"
         )
     }
 
     func testKeepScreenOnWithTimer() {
         XCTAssertEqual(
-            StatusLine.text(mode: .keepScreenOn, isPaused: false, timerRemaining: eightyMinutes, battery: .percent(82)),
-            "1 h 20 min left"
+            StatusLine.text(mode: .keepScreenOn, isPaused: false, timerRemaining: eightyMinutes, battery: .percent(82), powerSource: .battery, thermal: .nominal),
+            "1h 20m left"
         )
     }
 
     func testLidClosedWithTimer() {
         XCTAssertEqual(
-            StatusLine.text(mode: .lidClosed, isPaused: false, timerRemaining: eightyMinutes, battery: .percent(82)),
-            "1 h 20 min left · Battery 82%"
+            StatusLine.text(mode: .lidClosed, isPaused: false, timerRemaining: eightyMinutes, battery: .percent(82), powerSource: .battery, thermal: .nominal),
+            "1h 20m left · Battery 82% · Nominal thermals"
         )
     }
 
     func testLidClosedWithoutTimer() {
         XCTAssertEqual(
-            StatusLine.text(mode: .lidClosed, isPaused: false, timerRemaining: nil, battery: .percent(82)),
-            "Battery 82%"
+            StatusLine.text(mode: .lidClosed, isPaused: false, timerRemaining: nil, battery: .percent(82), powerSource: .battery, thermal: .nominal),
+            "Battery 82% · Nominal thermals"
         )
     }
 
     func testLidClosedPaused() {
         XCTAssertEqual(
-            StatusLine.text(mode: .lidClosed, isPaused: true, timerRemaining: eightyMinutes, battery: .percent(82)),
-            "Paused · on battery"
+            StatusLine.text(mode: .lidClosed, isPaused: true, timerRemaining: eightyMinutes, battery: .percent(82), powerSource: .battery, thermal: .nominal),
+            "Paused · on battery · Nominal thermals"
         )
     }
 
     func testUnreadableBattery() {
         XCTAssertEqual(
-            StatusLine.text(mode: .lidClosed, isPaused: false, timerRemaining: eightyMinutes, battery: .unknown),
-            "1 h 20 min left · Battery unknown"
+            StatusLine.text(mode: .lidClosed, isPaused: false, timerRemaining: eightyMinutes, battery: .unknown, powerSource: .battery, thermal: .nominal),
+            "1h 20m left · Battery unknown · Nominal thermals"
         )
         XCTAssertEqual(
-            StatusLine.text(mode: .lidClosed, isPaused: false, timerRemaining: nil, battery: .unknown),
-            "Battery unknown"
+            StatusLine.text(mode: .lidClosed, isPaused: false, timerRemaining: nil, battery: .unknown, powerSource: .battery, thermal: .nominal),
+            "Battery unknown · Nominal thermals"
         )
     }
 
     func testMacWithoutBattery() {
         XCTAssertEqual(
-            StatusLine.text(mode: .lidClosed, isPaused: false, timerRemaining: eightyMinutes, battery: .none),
-            "1 h 20 min left"
+            StatusLine.text(mode: .lidClosed, isPaused: false, timerRemaining: eightyMinutes, battery: .none, powerSource: .battery, thermal: .nominal),
+            "1h 20m left · Nominal thermals"
         )
-        XCTAssertNil(StatusLine.text(mode: .lidClosed, isPaused: false, timerRemaining: nil, battery: .none))
+        XCTAssertEqual(StatusLine.text(mode: .lidClosed, isPaused: false, timerRemaining: nil, battery: .none, powerSource: .battery, thermal: .nominal), "Nominal thermals")
+    }
+
+    func testDisabledStatusFieldsAreOmitted() {
+        XCTAssertEqual(
+            StatusLine.text(mode: .lidClosed, isPaused: false, timerRemaining: eightyMinutes, battery: .percent(82), powerSource: .battery, thermal: nil),
+            "1h 20m left · Battery 82%"
+        )
+        XCTAssertNil(StatusLine.text(mode: .lidClosed, isPaused: false, timerRemaining: nil, battery: .none, powerSource: .battery, thermal: nil))
+        XCTAssertEqual(
+            StatusLine.text(mode: .lidClosed, isPaused: true, timerRemaining: nil, battery: .none, powerSource: .battery, thermal: nil),
+            "Paused · on battery"
+        )
+    }
+
+    func testPluggedInReplacesVisibleBatteryLevelWithCharging() {
+        for battery in [BatteryLevel.percent(82), .unknown] {
+            XCTAssertEqual(
+                StatusLine.text(mode: .lidClosed, isPaused: false, timerRemaining: nil, battery: battery, powerSource: .ac, thermal: nil),
+                "Charging"
+            )
+        }
+        XCTAssertNil(StatusLine.text(mode: .lidClosed, isPaused: false, timerRemaining: nil, battery: .none, powerSource: .ac, thermal: nil))
+    }
+
+    func testCompactCountdownRoundsUpToMinutes() {
+        for (seconds, expected) in [(1.0, "0h 1m left"), (7200, "2h 0m left"), (4741, "1h 20m left")] {
+            XCTAssertEqual(
+                StatusLine.text(mode: .lidClosed, isPaused: false, timerRemaining: seconds, battery: .none, powerSource: .battery, thermal: nil),
+                expected
+            )
+        }
+    }
+
+    func testThermalCategories() {
+        let cases: [(ThermalState, String)] = [
+            (.nominal, "Nominal"), (.fair, "Fair"), (.serious, "Serious"),
+            (.critical, "Critical"), (.unknown, "Unknown"),
+        ]
+        for (state, category) in cases {
+            XCTAssertEqual(
+                StatusLine.text(mode: .lidClosed, isPaused: false, timerRemaining: nil, battery: .none, powerSource: .battery, thermal: state),
+                "\(category) thermals"
+            )
+        }
     }
 
     func testRemainingTimeRoundsUpToMinutes() {
@@ -96,7 +140,7 @@ final class WindowMessageTests: XCTestCase {
         XCTAssertEqual(message?.title, "Permission needed")
         XCTAssertEqual(
             message?.text,
-            "Allow LidAwake in System Settings > General > Login Items & Extensions. The mode turns on as soon as you do."
+            "Allow MacStayAwake in System Settings > General > Login Items & Extensions. The mode turns on as soon as you do."
         )
         XCTAssertEqual(message?.action, .openSystemSettings)
         XCTAssertEqual(message?.actionTitle, "Open System Settings")
@@ -108,7 +152,7 @@ final class WindowMessageTests: XCTestCase {
         XCTAssertEqual(message?.title, "Permission needed")
         XCTAssertEqual(
             message?.text,
-            "Allow LidAwake in System Settings > General > Login Items & Extensions, then choose Run with Lid Closed again."
+            "Allow MacStayAwake in System Settings > General > Login Items & Extensions, then choose Keep alive again."
         )
         XCTAssertEqual(message?.action, .openSystemSettings)
         XCTAssertEqual(message?.actionTitle, "Open System Settings")
@@ -117,8 +161,8 @@ final class WindowMessageTests: XCTestCase {
     func testMoveToApplications() {
         let message = only(helper: .moveToApplications)
         XCTAssertEqual(message?.kind, .actionNeeded)
-        XCTAssertEqual(message?.title, "Move LidAwake to Applications")
-        XCTAssertEqual(message?.text, "Run with Lid Closed needs the app in the Applications folder.")
+        XCTAssertEqual(message?.title, "Move MacStayAwake to Applications")
+        XCTAssertEqual(message?.text, "Keep alive needs the app in the Applications folder.")
         XCTAssertNil(message?.action)
         XCTAssertNil(message?.actionTitle)
     }
@@ -144,7 +188,7 @@ final class WindowMessageTests: XCTestCase {
     func testTurnedOff() {
         let message = only(mode: .turnedOff("The timer ran out."))
         XCTAssertEqual(message?.kind, .info)
-        XCTAssertEqual(message?.title, "LidAwake turned off")
+        XCTAssertEqual(message?.title, "MacStayAwake turned off")
         XCTAssertEqual(message?.text, "The timer ran out.")
         XCTAssertNil(message?.action)
         XCTAssertNil(message?.actionTitle)
@@ -153,7 +197,7 @@ final class WindowMessageTests: XCTestCase {
     func testTurnedOffWithError() {
         let message = only(mode: .turnedOffWithError("The helper did not respond."))
         XCTAssertEqual(message?.kind, .error)
-        XCTAssertEqual(message?.title, "LidAwake turned off")
+        XCTAssertEqual(message?.title, "MacStayAwake turned off")
         XCTAssertEqual(message?.text, "The helper did not respond.")
         XCTAssertNil(message?.actionTitle)
     }
@@ -169,8 +213,8 @@ final class WindowMessageTests: XCTestCase {
     func testRestarted() {
         let message = only(mode: .restarted)
         XCTAssertEqual(message?.kind, .info)
-        XCTAssertEqual(message?.title, "LidAwake turned off")
-        XCTAssertEqual(message?.text, "LidAwake was restarted. Turn the mode on again if you need it.")
+        XCTAssertEqual(message?.title, "MacStayAwake turned off")
+        XCTAssertEqual(message?.text, "MacStayAwake was restarted. Turn the mode on again if you need it.")
         XCTAssertNil(message?.action)
         XCTAssertNil(message?.actionTitle)
     }
@@ -178,7 +222,7 @@ final class WindowMessageTests: XCTestCase {
     func testHelperMessageStandsAboveModeMessage() {
         let messages = WindowMessage.list(helper: .approval, mode: .turnedOff("The timer ran out."))
         XCTAssertEqual(messages.map(\.source), [.helper, .mode])
-        XCTAssertEqual(messages.map(\.title), ["Permission needed", "LidAwake turned off"])
+        XCTAssertEqual(messages.map(\.title), ["Permission needed", "MacStayAwake turned off"])
     }
 }
 

@@ -19,7 +19,7 @@ public final class DisplaySleepAssertion: PowerAssertion {
 
     public var isHeld: Bool { assertionID != nil }
 
-    public init(name: String = "LidAwake: Keep Screen On") {
+    public init(name: String = "MacStayAwake: Keep Screen On") {
         self.name = name
     }
 

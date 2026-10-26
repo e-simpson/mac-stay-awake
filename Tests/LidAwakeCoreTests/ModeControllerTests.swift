@@ -40,7 +40,11 @@ private final class FakeHelper: HelperPreparing {
 @MainActor
 private final class FakeSessions: LidSessionService {
     var startError: Error?
+    var onStart: (() async -> Void)?
     var renewError: Error?
+    var endError: Error?
+    var onRenew: (() async -> Void)?
+    var onStatus: (() async -> Void)?
     var stopRecord: StopRecord?
     var paused = false
     var session: SessionOwnership = .noSession
@@ -52,12 +56,14 @@ private final class FakeSessions: LidSessionService {
 
     func startSession(leaseSeconds: Int, safety: SafetySettings) async throws {
         calls.append("start \(leaseSeconds)")
+        await onStart?()
         self.safety.append(safety)
         if let startError { throw startError }
     }
 
     func renewSession(leaseSeconds: Int, safety: SafetySettings) async throws {
         calls.append("renew \(leaseSeconds)")
+        await onRenew?()
         self.safety.append(safety)
         if let renewError { throw renewError }
     }
@@ -68,6 +74,7 @@ private final class FakeSessions: LidSessionService {
 
     func endSession() async throws {
         calls.append("end")
+        if let endError { throw endError }
         if let probeAtEnd { probedAtEnd.append(probeAtEnd()) }
     }
 
@@ -77,6 +84,7 @@ private final class FakeSessions: LidSessionService {
 
     func sessionStatus() async throws -> HelperSessionStatus {
         statusRequests.append(calls.count)
+        await onStatus?()
         if let statusError { throw statusError }
         return HelperSessionStatus(
             flag: .unknown,
@@ -139,15 +147,15 @@ private final class FakePowerSource: PowerSourceReading {
 private final class FakeWakeService: ScheduledWakeService {
     var wakes: [Date] = []
     private let sessions: FakeSessions
-    /// The minute of each call and the session calls made before it.
-    private(set) var requests: [(minute: Int, sessionCalls: [String])] = []
+    /// The enabled minutes of each call and the session calls made before it.
+    private(set) var requests: [(minutes: [Int], sessionCalls: [String])] = []
 
     init(sessions: FakeSessions) {
         self.sessions = sessions
     }
 
-    func setScheduledWake(minuteOfDay: Int) async throws {
-        requests.append((minuteOfDay, sessions.calls))
+    func setScheduledWakes(minutesOfDay: [Int]) async throws {
+        requests.append((minutesOfDay, sessions.calls))
     }
 
     func scheduledWakes() async throws -> [Date] {
@@ -159,7 +167,21 @@ private final class FakeClockMonitor: ClockChangeMonitoring {
     func start(_ handler: @escaping () -> Void) {}
 }
 
+@MainActor
+private final class FakeBrightness: DisplayBrightnessControlling {
+    var closed = 0
+    var restores = 0
+    var samples = 0
+    var sampleResult = DisplayBrightnessResult.sampled
+    var closeResult = DisplayBrightnessResult.dimmed
+    var restoreResult = DisplayBrightnessResult.restored
+    func sampleWhileOpen() -> DisplayBrightnessResult { samples += 1; return sampleResult }
+    func close() -> DisplayBrightnessResult { closed += 1; return closeResult }
+    func restore() -> DisplayBrightnessResult { restores += 1; return restoreResult }
+}
+
 private final class FakeLidMonitor: LidMonitoring {
+    var isClosed: Bool? = false
     private var handler: ((Bool) -> Void)?
 
     func start(_ handler: @escaping (Bool) -> Void) {
@@ -167,6 +189,7 @@ private final class FakeLidMonitor: LidMonitoring {
     }
 
     func change(closed: Bool) {
+        isClosed = closed
         handler?(closed)
     }
 }
@@ -233,13 +256,20 @@ final class ModeControllerTests: XCTestCase {
     private let notifier = FakeNotifier()
     private let powerMonitor = FakePowerSourceMonitor()
     private let lidMonitor = FakeLidMonitor()
+    private let brightness = FakeBrightness()
     private let power = FakePowerSource()
     private let locker = FakeScreenLocker()
     private let time = FakeTime()
     private let log = FakeActivityLog()
     private lazy var idleEvents = FakeIdleEvents(sessions: sessions)
     private let suiteName = "ModeControllerTests-\(UUID().uuidString)"
-    private lazy var preferences = SafetyPreferences(defaults: UserDefaults(suiteName: suiteName)!)
+    private lazy var preferences: SafetyPreferences = {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        // These integration scenarios opt out of the timer and explicitly enable screen locking.
+        defaults.set(false, forKey: SafetyPreferences.Key.timerEnabled)
+        defaults.set(true, forKey: SafetyPreferences.Key.lockOnLidCloseEnabled)
+        return SafetyPreferences(defaults: defaults)
+    }()
 
     override func tearDown() {
         UserDefaults().removePersistentDomain(forName: suiteName)
@@ -261,11 +291,367 @@ final class ModeControllerTests: XCTestCase {
             screenLocker: locker,
             activityLog: log,
             idleEvents: idleEvents,
+            brightness: brightness,
             leaseSeconds: 120,
             renewalSleep: renewalSleep ?? { try await Task.sleep(nanoseconds: 3_600_000_000_000) },
             timerCheckSleep: { try await Task.sleep(nanoseconds: 3_600_000_000_000) },
             now: { time.now }
         )
+    }
+
+    func testQuitWaitsForPendingDisplayRecoveryEvenInNormalMode() async {
+        let controller = makeController()
+        brightness.restoreResult = .pending
+        let blocked = await controller.prepareToQuit()
+        XCTAssertFalse(blocked)
+        XCTAssertNotNil(controller.message)
+        brightness.restoreResult = .restored
+        do {
+            try await controller.select(.lidClosed)
+            XCTFail("A pending Quit must not start a new override")
+        } catch {}
+        let restored = await controller.prepareToQuit()
+        XCTAssertTrue(restored)
+    }
+
+    func testQuitWaitsForFailedPowerRecoveryAndCanRetry() async throws {
+        let controller = makeController()
+        try await controller.select(.lidClosed)
+        sessions.endError = NSError(domain: "test", code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "Power recovery failed"])
+        let blocked = await controller.prepareToQuit()
+        XCTAssertFalse(blocked)
+        XCTAssertEqual(controller.mode, .off)
+        sessions.endError = nil
+        let restored = await controller.prepareToQuit()
+        XCTAssertTrue(restored)
+    }
+
+    func testQuitCannotSkipRecoveryWhenUsedHelperBecomesUnavailable() async throws {
+        let controller = makeController()
+        try await controller.select(.lidClosed)
+        sessions.endError = HelperError.timeout
+        helper.notReady = .timeout
+        let blocked = await controller.prepareToQuit()
+        XCTAssertFalse(blocked)
+        XCTAssertNotNil(controller.message)
+    }
+
+    func testQuitRetriesFailedUnknownCleanupAfterHelperDisappears() async {
+        let controller = makeController()
+        sessions.endError = HelperError.timeout
+        let first = await controller.prepareToQuit()
+        XCTAssertFalse(first)
+        helper.notReady = .timeout
+        let second = await controller.prepareToQuit()
+        XCTAssertFalse(second)
+    }
+
+    func testQuitRecoveryObligationSurvivesControllerRelaunch() async throws {
+        let controller = makeController()
+        try await controller.select(.lidClosed)
+        sessions.endError = HelperError.timeout
+        let first = await controller.prepareToQuit()
+        XCTAssertFalse(first)
+        helper.notReady = .timeout
+        let relaunched = makeController()
+        let second = await relaunched.prepareToQuit()
+        XCTAssertFalse(second)
+    }
+
+    func testFailedStartupCleanupCannotBeSkippedByQuit() async {
+        let controller = makeController()
+        sessions.session = .ours
+        sessions.endError = HelperError.timeout
+        await controller.clearLeftover()
+        helper.notReady = .timeout
+        let restored = await controller.prepareToQuit()
+        XCTAssertFalse(restored)
+    }
+
+    func testQuitWithoutInstalledHelperNeedsNoPowerOperation() async {
+        helper.notReady = .notReady("Not installed")
+        let controller = makeController()
+        let restored = await controller.prepareToQuit()
+        XCTAssertTrue(restored)
+        XCTAssertTrue(sessions.calls.isEmpty)
+    }
+
+    func testLidCycleDimsAndRestoresDuringAnEnabledSession() async throws {
+        let controller = makeController()
+        try await controller.select(.lidClosed)
+        let restores = brightness.restores
+        lidMonitor.change(closed: true)
+        await settle { self.brightness.closed == 1 }
+        XCTAssertEqual(brightness.closed, 1)
+        lidMonitor.change(closed: false)
+        await settle { self.brightness.restores > restores }
+        XCTAssertGreaterThan(brightness.restores, restores)
+        XCTAssertEqual(controller.mode, .lidClosed)
+        try await controller.select(.off)
+    }
+
+    func testDisabledOverridesKeepCoreSessionActiveWithoutBrightnessSupport() async throws {
+        preferences.displayOffWhenClosed = false
+        preferences.lowPowerWhenClosed = false
+        brightness.sampleResult = .unavailable
+        brightness.closeResult = .unavailable
+        lidMonitor.isClosed = true
+        let controller = makeController()
+        try await controller.select(.lidClosed)
+        XCTAssertEqual(controller.mode, .lidClosed)
+        XCTAssertFalse(sessions.safety.last!.lowPowerWhenClosed)
+        XCTAssertEqual(brightness.closed, 0)
+        XCTAssertEqual(brightness.samples, 0)
+        XCTAssertFalse(sessions.calls.contains("end"))
+        try await controller.select(.off)
+    }
+
+    func testDisplayOverrideOffRestoresDuringClosedSessionAndCanBeReenabled() async throws {
+        lidMonitor.isClosed = true
+        let controller = makeController()
+        try await controller.select(.lidClosed)
+        let dimmed = brightness.closed
+        let restored = brightness.restores
+        preferences.displayOffWhenClosed = false
+        await settle { self.brightness.restores > restored && !controller.isBusy }
+        XCTAssertEqual(brightness.closed, dimmed)
+        XCTAssertGreaterThan(brightness.restores, restored)
+        XCTAssertEqual(controller.mode, .lidClosed)
+        XCTAssertTrue(sessions.safety.last!.lowPowerWhenClosed)
+
+        preferences.displayOffWhenClosed = true
+        await settle { self.brightness.closed > dimmed && !controller.isBusy }
+        XCTAssertGreaterThan(brightness.closed, dimmed)
+        XCTAssertEqual(controller.mode, .lidClosed)
+        XCTAssertFalse(sessions.calls.contains("end"))
+        try await controller.select(.off)
+    }
+
+    func testOverrideChangeDuringRenewalIsSentAfterTheInflightSettings() async throws {
+        lidMonitor.isClosed = true
+        let controller = makeController()
+        try await controller.select(.lidClosed)
+        var resume: CheckedContinuation<Void, Never>?
+        sessions.onRenew = { await withCheckedContinuation { resume = $0 } }
+        let renewing = Task { await controller.renew() }
+        await settle { resume != nil }
+        let restores = brightness.restores
+        let closes = brightness.closed
+        preferences.displayOffWhenClosed = false
+        preferences.lowPowerWhenClosed = false
+        sessions.onRenew = nil
+        resume?.resume()
+        await renewing.value
+        await settle { self.sessions.safety.last?.lowPowerWhenClosed == false && !controller.isBusy }
+        XCTAssertFalse(sessions.safety.last!.lowPowerWhenClosed)
+        XCTAssertGreaterThan(brightness.restores, restores)
+        XCTAssertEqual(brightness.closed, closes)
+        XCTAssertEqual(controller.mode, .lidClosed)
+        XCTAssertFalse(sessions.calls.contains("end"))
+        try await controller.select(.off)
+    }
+
+    func testDisabledDisplayRecoveryPendingKeepsSessionAwakeAndRetries() async throws {
+        lidMonitor.isClosed = true
+        let controller = makeController()
+        try await controller.select(.lidClosed)
+        brightness.restoreResult = .pending
+        let restores = brightness.restores
+        let closes = brightness.closed
+        preferences.displayOffWhenClosed = false
+        await settle { self.brightness.restores > restores && !controller.isBusy }
+        XCTAssertEqual(controller.mode, .lidClosed)
+        XCTAssertFalse(sessions.calls.contains("end"))
+        guard case .failed(let warning)? = controller.message else {
+            return XCTFail("Pending optional recovery must remain visible")
+        }
+        XCTAssertTrue(warning.contains("brightness"))
+        let retries = brightness.restores
+        await controller.renew()
+        XCTAssertGreaterThan(brightness.restores, retries)
+        XCTAssertEqual(brightness.closed, closes)
+        XCTAssertEqual(controller.mode, .lidClosed)
+        brightness.restoreResult = .restored
+        await controller.renew()
+        XCTAssertEqual(controller.mode, .lidClosed)
+        try await controller.select(.off)
+    }
+
+    func testDisabledLowPowerRecoveryFailureKeepsActivationAndRenewalActive() async throws {
+        preferences.lowPowerWhenClosed = false
+        sessions.session = .ours
+        let recovery = HelperError.helper(.powerModeFailed, "Optional power recovery pending")
+        sessions.startError = recovery
+        let controller = makeController()
+        try await controller.select(.lidClosed)
+        XCTAssertEqual(controller.mode, .lidClosed)
+        XCTAssertFalse(sessions.calls.contains("end"))
+        XCTAssertEqual(controller.message, .failed("Optional power recovery pending"))
+        sessions.renewError = recovery
+        await controller.renew()
+        XCTAssertEqual(controller.mode, .lidClosed)
+        XCTAssertFalse(sessions.calls.contains("end"))
+        sessions.renewError = nil
+        await controller.renew()
+        XCTAssertEqual(controller.mode, .lidClosed)
+        try await controller.select(.off)
+    }
+
+    func testRequiredLowPowerActivationFailureStillRollsBack() async {
+        sessions.startError = HelperError.helper(.powerModeFailed, "Required power mode unavailable")
+        let controller = makeController()
+        var resume: CheckedContinuation<Void, Never>?
+        sessions.onStart = { await withCheckedContinuation { resume = $0 } }
+        let activating = Task { try await controller.select(.lidClosed) }
+        await settle { resume != nil }
+        preferences.lowPowerWhenClosed = false
+        resume?.resume()
+        do {
+            try await activating.value
+            XCTFail("Required override failure must reject activation")
+        } catch {}
+        XCTAssertEqual(controller.mode, .off)
+        XCTAssertTrue(sessions.calls.contains("end"))
+    }
+
+    func testOptionalPowerWarningCannotClaimANonexistentHelperSession() async {
+        preferences.lowPowerWhenClosed = false
+        sessions.startError = HelperError.helper(.powerModeFailed, "Power recovery pending")
+        sessions.session = .noSession
+        let controller = makeController()
+        do {
+            try await controller.select(.lidClosed)
+            XCTFail("An inactive helper cannot keep the core session awake")
+        } catch {}
+        XCTAssertEqual(controller.mode, .off)
+        XCTAssertTrue(sessions.calls.contains("end"))
+    }
+
+    func testOverrideChangeDuringActivationIsSentAfterTheInflightSettings() async throws {
+        lidMonitor.isClosed = true
+        let controller = makeController()
+        var resume: CheckedContinuation<Void, Never>?
+        sessions.onStart = { await withCheckedContinuation { resume = $0 } }
+        let activating = Task { try await controller.select(.lidClosed) }
+        await settle { resume != nil }
+        preferences.displayOffWhenClosed = false
+        preferences.lowPowerWhenClosed = false
+        await Task.yield()
+        resume?.resume()
+        try await activating.value
+        await settle { self.sessions.safety.last?.lowPowerWhenClosed == false && !controller.isBusy }
+        XCTAssertTrue(sessions.safety.first!.lowPowerWhenClosed, "The suspended request held its original settings")
+        XCTAssertFalse(sessions.safety.last!.lowPowerWhenClosed)
+        XCTAssertEqual(brightness.closed, 0)
+        XCTAssertEqual(controller.mode, .lidClosed)
+        XCTAssertFalse(sessions.calls.contains("end"))
+        try await controller.select(.off)
+    }
+
+    func testBrightnessFailureEndsTheSessionAndReportsUnavailable() async throws {
+        let controller = makeController()
+        try await controller.select(.lidClosed)
+        brightness.closeResult = .unavailable
+        lidMonitor.change(closed: true)
+        await settle { controller.mode == .off }
+        XCTAssertEqual(controller.mode, .off)
+        XCTAssertTrue(sessions.calls.contains("end"))
+        XCTAssertNotNil(controller.message)
+    }
+
+    func testBrightnessFailureCannotHidePowerRecovery() async throws {
+        let controller = makeController()
+        try await controller.select(.lidClosed)
+        sessions.endError = NSError(domain: "test", code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "Simulated power recovery failure"])
+        brightness.closeResult = .unavailable
+        lidMonitor.change(closed: true)
+        await settle { controller.mode == .off }
+        guard case .failed(let text)? = controller.message else {
+            return XCTFail("Recovery must remain visible")
+        }
+        XCTAssertTrue(text.contains("Simulated power recovery failure"))
+        XCTAssertTrue(text.contains("brightness"))
+    }
+
+    func testOffDuringActivationCannotLeaveALateSessionRunning() async throws {
+        let controller = makeController()
+        var resume: CheckedContinuation<Void, Never>?
+        sessions.onStart = { await withCheckedContinuation { resume = $0 } }
+        let activating = Task { try await controller.select(.lidClosed) }
+        await settle { resume != nil }
+        var stopEntered = false
+        let stopping = Task { stopEntered = true; try await controller.select(.off) }
+        await settle { stopEntered }
+        resume?.resume()
+        try await activating.value
+        try await stopping.value
+        XCTAssertEqual(controller.mode, .off)
+        XCTAssertTrue(sessions.calls.contains("end"))
+        XCTAssertEqual(brightness.closed, 0)
+    }
+
+    func testStandardWaitsForRenewalBeforeAnotherSessionCanStart() async throws {
+        let controller = makeController()
+        try await controller.select(.lidClosed)
+        var resume: CheckedContinuation<Void, Never>?
+        sessions.onRenew = { await withCheckedContinuation { resume = $0 } }
+        let renewing = Task { await controller.renew() }
+        await settle { resume != nil }
+        var stopEntered = false
+        let stopping = Task { stopEntered = true; try await controller.select(.off) }
+        await settle { stopEntered }
+        XCTAssertFalse(sessions.calls.contains("end"), "Cleanup must not race an older power RPC")
+        resume?.resume()
+        await renewing.value
+        try await stopping.value
+        XCTAssertEqual(controller.mode, .off)
+        sessions.onRenew = nil
+        try await controller.select(.lidClosed)
+        XCTAssertEqual(controller.mode, .lidClosed)
+        try await controller.select(.off)
+    }
+
+    func testStandardDuringFinalActivationStatusIsNotLost() async throws {
+        let controller = makeController()
+        var resume: CheckedContinuation<Void, Never>?
+        sessions.onStatus = { await withCheckedContinuation { resume = $0 } }
+        let activating = Task { try await controller.select(.lidClosed) }
+        await settle { resume != nil }
+        var stopEntered = false
+        let stopping = Task { stopEntered = true; try await controller.select(.off) }
+        await settle { stopEntered }
+        resume?.resume()
+        try await activating.value
+        try await stopping.value
+        XCTAssertEqual(controller.mode, .off)
+        XCTAssertTrue(sessions.calls.contains("end"))
+    }
+
+    func testFailedActivationStillAttemptsCleanupOfUncertainHelperState() async {
+        let controller = makeController()
+        sessions.startError = HelperError.timeout
+        do {
+            try await controller.select(.lidClosed)
+            XCTFail("A timed-out activation must be reported")
+        } catch {}
+        XCTAssertEqual(controller.mode, .off)
+        XCTAssertTrue(sessions.calls.contains("end"))
+    }
+
+    func testSafetyReasonCannotHideFailedRecovery() async throws {
+        let controller = makeController()
+        try await controller.select(.lidClosed)
+        sessions.stopRecord = StopRecord(reason: .timer, time: Date())
+        sessions.renewError = HelperError.helper(.noSession, "Session ended")
+        sessions.endError = NSError(domain: "test", code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "Simulated recovery failure"])
+        await controller.renew()
+        guard case .failed(let text)? = controller.message else { return XCTFail("Recovery must remain visible") }
+        XCTAssertTrue(text.contains("Recovery pending"))
+        XCTAssertTrue(text.contains("Simulated recovery failure"))
+        XCTAssertTrue(text.contains(StopNotice.body(for: StopRecord(reason: .timer, time: Date()))))
     }
 
     private func settle(until done: () -> Bool) async {
@@ -516,8 +902,8 @@ final class ModeControllerTests: XCTestCase {
 
         await controller.clearLeftover()
         XCTAssertEqual(sessions.calls, ["end", "reason", "clear reason"])
-        XCTAssertEqual(controller.message, .turnedOff("LidAwake closed unexpectedly, so normal sleep was restored."))
-        XCTAssertEqual(notifier.posts, ["LidAwake turned off: LidAwake closed unexpectedly, so normal sleep was restored."])
+        XCTAssertEqual(controller.message, .turnedOff("MacStayAwake closed unexpectedly, so normal sleep was restored."))
+        XCTAssertEqual(notifier.posts, ["MacStayAwake turned off: MacStayAwake closed unexpectedly, so normal sleep was restored."])
     }
 
     func testLaunchLeavesRunningModeAlone() async throws {
@@ -533,7 +919,7 @@ final class ModeControllerTests: XCTestCase {
 
     // MARK: Safety limits and notifications
 
-    func testDefaultPreferences() {
+    func testStoredPreferencesAreUsed() {
         XCTAssertFalse(preferences.timerEnabled)
         XCTAssertEqual(preferences.timerSeconds, 7200)
         XCTAssertTrue(preferences.batteryLimitEnabled)
@@ -599,7 +985,7 @@ final class ModeControllerTests: XCTestCase {
         XCTAssertEqual(controller.mode, .off)
         XCTAssertFalse(assertion.isHeld)
         XCTAssertNil(controller.timerRemaining())
-        XCTAssertEqual(notifier.posts, ["LidAwake turned off: The timer ran out."])
+        XCTAssertEqual(notifier.posts, ["MacStayAwake turned off: The timer ran out."])
         XCTAssertEqual(controller.message, .turnedOff("The timer ran out."))
         XCTAssertEqual(sessions.calls, [])
     }
@@ -625,7 +1011,7 @@ final class ModeControllerTests: XCTestCase {
         preferences.timerSeconds = 1800
         await settle { controller.mode == .off }
         XCTAssertEqual(controller.mode, .off)
-        XCTAssertEqual(notifier.posts, ["LidAwake turned off: The timer ran out."])
+        XCTAssertEqual(notifier.posts, ["MacStayAwake turned off: The timer ran out."])
     }
 
     func testSettingChangeSendsRenewal() async throws {
@@ -698,7 +1084,7 @@ final class ModeControllerTests: XCTestCase {
         XCTAssertEqual(controller.mode, .off)
         XCTAssertFalse(activity.isActive)
         XCTAssertEqual(sessions.calls, ["start 120", "renew 120", "end", "reason", "clear reason"])
-        XCTAssertEqual(notifier.posts, ["LidAwake turned off: The battery dropped to 15%."])
+        XCTAssertEqual(notifier.posts, ["MacStayAwake turned off: The battery dropped to 15%."])
         XCTAssertEqual(controller.message, .turnedOff("The battery dropped to 15%."))
         XCTAssertNil(sessions.stopRecord)
     }
@@ -713,7 +1099,7 @@ final class ModeControllerTests: XCTestCase {
         XCTAssertEqual(controller.mode, .off)
         XCTAssertFalse(activity.isActive)
         XCTAssertEqual(sessions.calls, ["start 120", "renew 120", "end", "reason", "clear reason"])
-        XCTAssertEqual(notifier.posts, ["LidAwake turned off: The Mac got too hot."])
+        XCTAssertEqual(notifier.posts, ["MacStayAwake turned off: The Mac got too hot."])
         XCTAssertEqual(controller.message, .turnedOff("The Mac got too hot."))
     }
 
@@ -725,7 +1111,7 @@ final class ModeControllerTests: XCTestCase {
         sessions.renewError = HelperError.helper(.noSession, "No active session.")
         await controller.renew()
         XCTAssertEqual(controller.mode, .off)
-        XCTAssertEqual(notifier.posts, ["LidAwake turned off: The thermal state could not be read."])
+        XCTAssertEqual(notifier.posts, ["MacStayAwake turned off: The thermal state could not be read."])
     }
 
     func testThermalRefusalShowsError() async {
@@ -757,7 +1143,7 @@ final class ModeControllerTests: XCTestCase {
         sessions.renewError = HelperError.helper(.noSession, "No active session.")
         await controller.checkTimer()
         XCTAssertEqual(controller.mode, .off)
-        XCTAssertEqual(notifier.posts, ["LidAwake turned off: The timer ran out."])
+        XCTAssertEqual(notifier.posts, ["MacStayAwake turned off: The timer ran out."])
     }
 
     func testBatteryRefusalShowsError() async {
@@ -779,7 +1165,7 @@ final class ModeControllerTests: XCTestCase {
 
         await controller.clearLeftover()
         XCTAssertEqual(sessions.calls, ["clear", "reason", "clear reason"])
-        XCTAssertEqual(notifier.posts, ["LidAwake turned off: LidAwake closed unexpectedly, so normal sleep was restored."])
+        XCTAssertEqual(notifier.posts, ["MacStayAwake turned off: MacStayAwake closed unexpectedly, so normal sleep was restored."])
         XCTAssertNil(sessions.stopRecord)
     }
 
@@ -839,7 +1225,7 @@ final class ModeControllerTests: XCTestCase {
 
     func testNoticeTexts() {
         let time = Date()
-        XCTAssertEqual(StopNotice.title, "LidAwake turned off")
+        XCTAssertEqual(StopNotice.title, "MacStayAwake turned off")
         XCTAssertEqual(StopNotice.body(for: StopRecord(reason: .timer, time: time)), "The timer ran out.")
         XCTAssertEqual(
             StopNotice.body(for: StopRecord(reason: .battery, time: time, batteryPercent: 9)),
@@ -851,7 +1237,7 @@ final class ModeControllerTests: XCTestCase {
         )
         XCTAssertEqual(
             StopNotice.body(for: StopRecord(reason: .leaseExpired, time: time)),
-            "LidAwake closed unexpectedly, so normal sleep was restored."
+            "MacStayAwake closed unexpectedly, so normal sleep was restored."
         )
         XCTAssertEqual(StopNotice.body(for: StopRecord(reason: .thermal, time: time)), "The Mac got too hot.")
         XCTAssertEqual(
@@ -870,13 +1256,13 @@ final class ModeControllerTests: XCTestCase {
             StopNotice.body(for: StopRecord(reason: .idle, time: time)),
             "Nothing was working for a while."
         )
-        XCTAssertEqual(PauseNotice.title, "LidAwake paused")
+        XCTAssertEqual(PauseNotice.title, "MacStayAwake paused")
         XCTAssertEqual(PauseNotice.body, "Running on battery. It resumes when you plug in.")
     }
 
     // MARK: Charging only
 
-    private let pausedNotice = "LidAwake paused: Running on battery. It resumes when you plug in."
+    private let pausedNotice = "MacStayAwake paused: Running on battery. It resumes when you plug in."
 
     func testPowerSourceChangeSendsRenewalThenAsksForStatus() async throws {
         let controller = makeController()
@@ -986,10 +1372,10 @@ final class ModeControllerTests: XCTestCase {
         sessions.renewError = HelperError.helper(.noSession, "The power source could not be read.")
         await controller.renew()
         XCTAssertEqual(controller.mode, .off)
-        XCTAssertEqual(notifier.posts, ["LidAwake turned off: The power source could not be read."])
+        XCTAssertEqual(notifier.posts, ["MacStayAwake turned off: The power source could not be read."])
     }
 
-    func testLockSettingDefaultsOnAndSendsNothing() async throws {
+    func testStoredLockSettingSendsNoRenewal() async throws {
         XCTAssertTrue(preferences.lockOnLidCloseEnabled)
         let controller = makeController()
         try await controller.select(.lidClosed)
@@ -1632,7 +2018,7 @@ final class ModeControllerTests: XCTestCase {
     /// A scheduler that remembers `wakeTime` with the setting on, for a controller made by the test.
     private func makeScheduler(_ controller: ModeController, wakeService: FakeWakeService) async -> WakeScheduler {
         let wakePreferences = WakePreferences(defaults: UserDefaults(suiteName: wakeSuiteName)!)
-        wakePreferences.wakeEnabled = true
+        wakePreferences.save(WakeAlarm(minuteOfDay: 480, isEnabled: true))
         wakeService.wakes = [wakeTime]
         let scheduler = WakeScheduler(
             preferences: wakePreferences,
@@ -1668,7 +2054,7 @@ final class ModeControllerTests: XCTestCase {
         XCTAssertFalse(log.events.contains(.modeOn(.lidClosed)))
         XCTAssertFalse(log.events.contains(.wake))
         let request = wakeService.requests.last!
-        XCTAssertEqual(request.minute, 480)
+        XCTAssertEqual(request.minutes, [480])
         XCTAssertEqual(request.sessionCalls.first, "start 120", "the helper is asked after the mode is on")
     }
 

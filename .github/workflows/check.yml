@@ -1,0 +1,21 @@
+name: Check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test
+        run: swift test
+      - name: Build inert preview
+        run: PREVIEW_BUILD=1 scripts/build-app.sh

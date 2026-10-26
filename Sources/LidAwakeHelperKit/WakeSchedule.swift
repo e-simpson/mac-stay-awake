@@ -68,11 +68,13 @@ public enum WakeSchedule {
     /// The next `count` times at `minuteOfDay` on the local clock of `calendar.timeZone`, later than `lead` from now.
     /// A time skipped by a clock change moves to the first minute after the change;
     /// a time that occurs twice is taken the first time.
-    public static func wakes(minuteOfDay: Int, after now: Date, calendar: Calendar) -> [Date] {
+    public static func wakes(
+        minuteOfDay: Int, after now: Date, calendar: Calendar, minimumLead: TimeInterval = WakeSchedule.lead
+    ) -> [Date] {
         let zone = calendar.timeZone
         var wallCalendar = calendar
         wallCalendar.timeZone = TimeZone(secondsFromGMT: 0)!
-        let earliest = now.addingTimeInterval(lead)
+        let earliest = now.addingTimeInterval(minimumLead)
         // Local clock readings are handled as if they were GMT, so day arithmetic sees no clock changes.
         let wallNow = now.addingTimeInterval(TimeInterval(zone.secondsFromGMT(for: now)))
         let today = wallCalendar.startOfDay(for: wallNow)
@@ -85,6 +87,20 @@ public enum WakeSchedule {
             }
         }
         return wakes
+    }
+
+    /// Two upcoming occurrences of every daily alarm, deduplicated when DST maps times to the same instant.
+    public static func wakes(
+        minutesOfDay: [Int], after now: Date, calendar: Calendar, events: [PowerEvent] = []
+    ) -> [Date] {
+        let owned = Set(events.filter(isOurs).map { seconds($0.time) })
+        return Array(Set(minutesOfDay.flatMap { minute -> [Date] in
+            let fresh = wakes(minuteOfDay: minute, after: now, calendar: calendar)
+            // Lead time limits new additions; an already-owned imminent occurrence must still fire.
+            let existing = wakes(minuteOfDay: minute, after: now, calendar: calendar, minimumLead: 0)
+                .filter { owned.contains(seconds($0)) }
+            return Array(Set(fresh + existing).sorted().prefix(count))
+        })).sorted()
     }
 
     /// Our wakes not wanted are cancelled and wanted times not yet ours are added; other events are left alone.
@@ -133,10 +149,10 @@ public final class WakeScheduler {
         self.calendar = calendar
     }
 
-    /// `minuteOfDay` from 0 to 1439 keeps the next `WakeSchedule.count` wakes at that time; -1 cancels ours.
-    public func set(minuteOfDay: Int) -> SessionResult {
-        guard minuteOfDay == ScheduledWake.off || ScheduledWake.minutes.contains(minuteOfDay) else {
-            return SessionResult(code: .invalidArgument, message: "Minute of day must be 0 to 1439, or -1 to cancel.")
+    /// Empty cancels ours; every daily time keeps its next two occurrences.
+    public func set(minutesOfDay: [Int]) -> SessionResult {
+        guard let minutes = ScheduledWake.normalizedMinutes(minutesOfDay) else {
+            return SessionResult(code: .invalidArgument, message: "Use at most 16 daily alarm times, each from 0 to 1439.")
         }
         let current: [PowerEvent]
         do {
@@ -144,15 +160,16 @@ public final class WakeScheduler {
         } catch {
             return .failure(.wakeScheduleFailed, error)
         }
-        let wanted = minuteOfDay == ScheduledWake.off
-            ? []
-            : WakeSchedule.wakes(minuteOfDay: minuteOfDay, after: now(), calendar: calendar())
+        let wanted = WakeSchedule.wakes(minutesOfDay: minutes, after: now(), calendar: calendar(), events: current)
         let plan = WakeSchedule.plan(wanted: wanted, events: current)
         var firstError: Error?
-        // Added before the old ones are cancelled, and nothing is rolled back,
-        // so a failure leaves a wake too many rather than none.
+        // Keep the previous schedule intact unless every replacement was added successfully.
+        // Successful partial additions are retained and reused by the next attempt.
         for time in plan.add {
             do { try events.scheduleWake(at: time) } catch { firstError = firstError ?? error }
+        }
+        if let firstError {
+            return .failure(.wakeScheduleFailed, firstError)
         }
         for time in plan.cancel {
             do { try events.cancelWake(at: time) } catch { firstError = firstError ?? error }

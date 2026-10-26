@@ -22,45 +22,16 @@ final class AccentTests: XCTestCase {
         XCTAssertEqual(AccentPreference(defaults: defaults).theme, .system)
     }
 
-    func testStoredBlueIsKept() {
-        defaults.set("blue", forKey: "accentTheme")
-        XCTAssertEqual(AccentPreference(defaults: defaults).theme, .blue)
-        XCTAssertEqual(defaults.string(forKey: "accentTheme"), "blue")
-    }
-
-    func testStoredAmberIsKept() {
-        defaults.set("amber", forKey: "accentTheme")
-        XCTAssertEqual(AccentPreference(defaults: defaults).theme, .amber)
-        XCTAssertEqual(defaults.string(forKey: "accentTheme"), "amber")
-    }
-
-    func testStoredSystemIsRead() {
-        defaults.set("system", forKey: "accentTheme")
-        XCTAssertEqual(AccentPreference(defaults: defaults).theme, .system)
-    }
-
-    func testUnknownValueReadsAsSystem() {
-        defaults.set("green", forKey: "accentTheme")
-        XCTAssertEqual(AccentPreference(defaults: defaults).theme, .system)
-        defaults.set(1, forKey: "accentTheme")
-        XCTAssertEqual(AccentPreference(defaults: defaults).theme, .system)
+    func testStoredCustomAccentDoesNotOverrideSystem() {
+        for choice in ["blue", "amber", "system", "green"] {
+            defaults.set(choice, forKey: "accentTheme")
+            XCTAssertEqual(AccentPreference(defaults: defaults).theme, .system)
+        }
     }
 
     func testChoicesInSwitchOrder() {
         XCTAssertEqual(AccentTheme.allCases, [.blue, .system, .amber])
         XCTAssertEqual(AccentTheme.allCases.map(\.rawValue), ["blue", "system", "amber"])
-    }
-
-    func testChoiceIsStored() {
-        let preference = AccentPreference(defaults: defaults)
-        preference.theme = .amber
-        XCTAssertEqual(defaults.string(forKey: "accentTheme"), "amber")
-        preference.theme = .blue
-        XCTAssertEqual(defaults.string(forKey: "accentTheme"), "blue")
-        XCTAssertEqual(AccentPreference(defaults: defaults).theme, .blue)
-        preference.theme = .system
-        XCTAssertEqual(defaults.string(forKey: "accentTheme"), "system")
-        XCTAssertEqual(AccentPreference(defaults: defaults).theme, .system)
     }
 
     func testSystemColorChangeRedrawsOnlySystemAccent() {

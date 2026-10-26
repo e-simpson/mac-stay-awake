@@ -157,10 +157,39 @@ final class SafetyPreferencesTests: XCTestCase {
 
     func testDefaults() {
         let preferences = SafetyPreferences(defaults: defaults)
+        XCTAssertTrue(preferences.timerEnabled)
+        XCTAssertFalse(preferences.chargingOnlyEnabled, "Battery use is the default")
+        XCTAssertTrue(preferences.displayOffWhenClosed)
+        XCTAssertTrue(preferences.lowPowerWhenClosed)
+        XCTAssertTrue(preferences.helperSettings.lowPowerWhenClosed)
+        XCTAssertFalse(preferences.lockOnLidCloseEnabled, "Do not change the user's lock behavior")
         XCTAssertEqual(preferences.timerSeconds, 7200)
         XCTAssertEqual(preferences.batteryLimitPercent, 20)
         XCTAssertFalse(preferences.idleSleepEnabled)
         XCTAssertEqual(preferences.idleSleepMinutes, 20)
+    }
+
+    func testClosedLidOverridesPersistIndependentlyAndNotifyAfterSaving() {
+        let preferences = SafetyPreferences(defaults: defaults)
+        let originalHelperSettings = preferences.helperSettings
+        var saved: [(Bool, Bool)] = []
+        let subscription = preferences.changes.sink {
+            saved.append((self.defaults.bool(forKey: "displayOffWhenClosed"),
+                          self.defaults.bool(forKey: "lowPowerWhenClosed")))
+        }
+        preferences.displayOffWhenClosed = false
+        XCTAssertEqual(preferences.helperSettings, originalHelperSettings, "Display policy stays local")
+        preferences.lowPowerWhenClosed = false
+        XCTAssertFalse(preferences.helperSettings.lowPowerWhenClosed)
+        subscription.cancel()
+        XCTAssertEqual(saved.count, 2)
+        XCTAssertFalse(saved[0].0)
+        XCTAssertTrue(saved[0].1)
+        XCTAssertFalse(saved[1].0)
+        XCTAssertFalse(saved[1].1)
+        let restored = SafetyPreferences(defaults: defaults)
+        XCTAssertFalse(restored.displayOffWhenClosed)
+        XCTAssertFalse(restored.lowPowerWhenClosed)
     }
 
     func testEndingIdleSleepSessionKeepsMinutesAndSendsNothing() {

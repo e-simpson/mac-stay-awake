@@ -2,71 +2,89 @@ import Combine
 import Foundation
 import LidAwakeShared
 
-/// The daily wake: whether it is on and the local time it happens at.
+public struct WakeAlarm: Codable, Equatable, Identifiable {
+    public let id: UUID
+    public var minuteOfDay: Int
+    public var isEnabled: Bool
+
+    public init(id: UUID = UUID(), minuteOfDay: Int, isEnabled: Bool = false) {
+        self.id = id
+        self.minuteOfDay = minuteOfDay
+        self.isEnabled = isEnabled
+    }
+}
+
+/// Daily alarms on the local clock. Legacy settings load as one alarm until the first edit saves the list.
 @MainActor
 public final class WakePreferences: ObservableObject {
     public enum Key {
+        public static let alarms = "dailyWakeAlarms"
         public static let wakeEnabled = "wakeEnabled"
         public static let wakeMinuteOfDay = "wakeMinuteOfDay"
         public static let scheduledWakeTimes = "scheduledWakeTimes"
     }
 
     public static let defaultMinuteOfDay = 480
-
-    @Published public var wakeEnabled: Bool {
-        didSet { save(wakeEnabled, Key.wakeEnabled) }
-    }
-    /// 0 to 1439, local time.
-    @Published public var wakeMinuteOfDay: Int {
-        didSet { save(wakeMinuteOfDay, Key.wakeMinuteOfDay) }
-    }
-
-    /// Fires after either setting has changed.
+    @Published public private(set) var alarms: [WakeAlarm]
     public let changes = PassthroughSubject<Void, Never>()
-
     private let defaults: UserDefaults
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        defaults.register(defaults: [
-            Key.wakeEnabled: false,
-            Key.wakeMinuteOfDay: Self.defaultMinuteOfDay,
-        ])
-        wakeEnabled = defaults.bool(forKey: Key.wakeEnabled)
-        let minute = defaults.integer(forKey: Key.wakeMinuteOfDay)
-        wakeMinuteOfDay = ScheduledWake.minutes.contains(minute) ? minute : Self.defaultMinuteOfDay
+        if defaults.object(forKey: Key.alarms) != nil {
+            let saved = defaults.data(forKey: Key.alarms)
+                .flatMap { try? JSONDecoder().decode([WakeAlarm].self, from: $0) } ?? []
+            var times: Set<Int> = []
+            var ids: Set<UUID> = []
+            alarms = Array(saved.filter {
+                ScheduledWake.minutes.contains($0.minuteOfDay)
+                    && times.insert($0.minuteOfDay).inserted && ids.insert($0.id).inserted
+            }.prefix(ScheduledWake.maximumAlarms)).sorted { $0.minuteOfDay < $1.minuteOfDay }
+        } else if defaults.object(forKey: Key.wakeEnabled) != nil || defaults.object(forKey: Key.wakeMinuteOfDay) != nil {
+            let stored = defaults.object(forKey: Key.wakeMinuteOfDay) as? Int ?? Self.defaultMinuteOfDay
+            let minute = ScheduledWake.minutes.contains(stored) ? stored : Self.defaultMinuteOfDay
+            alarms = [WakeAlarm(minuteOfDay: minute, isEnabled: defaults.bool(forKey: Key.wakeEnabled))]
+        } else {
+            alarms = []
+        }
     }
 
-    /// The wakes the helper reported last, kept so a wake missed before a restart can still be found.
-    /// Saving them does not fire `changes`.
+    public var enabledMinutesOfDay: [Int] { alarms.filter(\.isEnabled).map(\.minuteOfDay) }
+    public var hasEnabledAlarms: Bool { alarms.contains(where: \.isEnabled) }
+
+    /// Adds or edits one alarm; another alarm at the same time is never overwritten.
+    @discardableResult
+    public func save(_ alarm: WakeAlarm) -> Bool {
+        guard ScheduledWake.minutes.contains(alarm.minuteOfDay),
+              !alarms.contains(where: { $0.id != alarm.id && $0.minuteOfDay == alarm.minuteOfDay }),
+              alarms.contains(where: { $0.id == alarm.id }) || alarms.count < ScheduledWake.maximumAlarms else { return false }
+        var updated = alarms.filter { $0.id != alarm.id }
+        updated.append(alarm)
+        return persist(updated.sorted { $0.minuteOfDay < $1.minuteOfDay })
+    }
+
+    public func remove(id: UUID) {
+        _ = persist(alarms.filter { $0.id != id })
+    }
+
+    private func persist(_ updated: [WakeAlarm]) -> Bool {
+        guard updated != alarms else { return true }
+        guard let data = try? JSONEncoder().encode(updated) else { return false }
+        defaults.set(data, forKey: Key.alarms)
+        alarms = updated
+        changes.send()
+        return true
+    }
+
+    /// Last confirmed helper events survive restart; changing this cache does not reschedule.
     public var scheduledWakeTimes: [Date] {
         get { defaults.array(forKey: Key.scheduledWakeTimes)?.compactMap { $0 as? Date } ?? [] }
         set { defaults.set(newValue, forKey: Key.scheduledWakeTimes) }
     }
-
-    /// The value for the helper's `setScheduledWake`.
-    public var helperMinuteOfDay: Int {
-        wakeEnabled ? wakeMinuteOfDay : ScheduledWake.off
-    }
-
-    private func save(_ value: Any, _ key: String) {
-        defaults.set(value, forKey: key)
-        changes.send()
-    }
 }
 
-/// What the Wake at row shows.
+/// Local clock formatting shared by the daily alarm editor.
 public enum WakeRow {
-    public enum Detail: Equatable {
-        case everyDay
-        case couldNotSet
-    }
-
-    /// The text under the title: the failure of the last agreement with the helper, or the usual one.
-    public static func detail(lastError: String?) -> Detail {
-        lastError == nil ? .everyDay : .couldNotSet
-    }
-
     /// The time in the pill, in the 12- or 24-hour form the system uses.
     public static func time(minuteOfDay: Int, locale: Locale = .autoupdatingCurrent) -> String {
         let formatter = DateFormatter()

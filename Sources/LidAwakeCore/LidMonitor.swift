@@ -1,8 +1,10 @@
 import Foundation
+import LidAwakeShared
 import IOKit
 import IOKit.pwr_mgt
 
 public protocol LidMonitoring: AnyObject {
+    var isClosed: Bool? { get }
     /// Calls `handler` on the main thread each time the lid opens (false) or closes (true).
     func start(_ handler: @escaping (_ closed: Bool) -> Void)
 }
@@ -18,7 +20,7 @@ public final class IOKitLidMonitor: LidMonitoring {
     private var port: IONotificationPortRef?
     private var notification: io_object_t = 0
     private var handler: ((Bool) -> Void)?
-    private var closed = false
+    public private(set) var isClosed: Bool?
 
     public init() {}
 
@@ -59,18 +61,14 @@ public final class IOKitLidMonitor: LidMonitoring {
         }
         port = created
         self.handler = handler
-        closed = Self.isClosed(rootDomain)
+        isClosed = SystemLidState.read()
     }
 
     // The message also fires when only the "lid causes sleep" bit changes.
     private func clamshellChanged(closed newValue: Bool) {
-        guard newValue != closed else { return }
-        closed = newValue
+        guard newValue != isClosed else { return }
+        isClosed = newValue
         handler?(newValue)
     }
 
-    private static func isClosed(_ rootDomain: io_service_t) -> Bool {
-        let value = IORegistryEntryCreateCFProperty(rootDomain, "AppleClamshellState" as CFString, kCFAllocatorDefault, 0)
-        return (value?.takeRetainedValue() as? Bool) ?? false
-    }
 }

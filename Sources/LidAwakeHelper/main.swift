@@ -22,7 +22,8 @@ private let session = LidSession(
     power: IOKitPowerSource(),
     thermal: ProcessInfoThermalState(),
     idle: idleWatcher,
-    stopReasons: FileStopReasonStore()
+    stopReasons: FileStopReasonStore(),
+    closedPower: ClosedLidPower()
 )
 
 private let wakeScheduler = WakeScheduler(
@@ -54,6 +55,7 @@ final class Helper: NSObject, HelperProtocol {
         chargingOnly: Bool,
         idleSleepMinutes: Int,
         watchedAppPaths: [String],
+        lowPowerWhenClosed: Bool,
         reply: @escaping (Int, String?) -> Void
     ) {
         let safety = SafetySettings(
@@ -62,7 +64,8 @@ final class Helper: NSObject, HelperProtocol {
             thermalProtection: thermalProtection,
             chargingOnly: chargingOnly,
             idleSleepMinutes: idleSleepMinutes,
-            watchedAppPaths: watchedAppPaths
+            watchedAppPaths: watchedAppPaths,
+            lowPowerWhenClosed: lowPowerWhenClosed
         )
         withLease(leaseSeconds, reply: reply) { session.start(lease: $0, safety: safety) }
     }
@@ -75,6 +78,7 @@ final class Helper: NSObject, HelperProtocol {
         chargingOnly: Bool,
         idleSleepMinutes: Int,
         watchedAppPaths: [String],
+        lowPowerWhenClosed: Bool,
         reply: @escaping (Int, String?) -> Void
     ) {
         let safety = SafetySettings(
@@ -83,7 +87,8 @@ final class Helper: NSObject, HelperProtocol {
             thermalProtection: thermalProtection,
             chargingOnly: chargingOnly,
             idleSleepMinutes: idleSleepMinutes,
-            watchedAppPaths: watchedAppPaths
+            watchedAppPaths: watchedAppPaths,
+            lowPowerWhenClosed: lowPowerWhenClosed
         )
         withLease(leaseSeconds, reply: reply) { session.renew(lease: $0, safety: safety) }
     }
@@ -154,8 +159,8 @@ final class Helper: NSObject, HelperProtocol {
         }
     }
 
-    func setScheduledWake(minuteOfDay: Int, reply: @escaping (Int, String?) -> Void) {
-        perform(reply: reply) { wakeScheduler.set(minuteOfDay: minuteOfDay) }
+    func setScheduledWakes(minutesOfDay: [Int], reply: @escaping (Int, String?) -> Void) {
+        perform(reply: reply) { wakeScheduler.set(minutesOfDay: minutesOfDay) }
     }
 
     func scheduledWakes(reply: @escaping (Int, String?, String?) -> Void) {

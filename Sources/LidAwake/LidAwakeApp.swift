@@ -9,28 +9,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let helperSetup: HelperSetup
     let launchAtLogin = LaunchAtLogin()
     let accent = AccentPreference(systemColorsChanged: NSColor.systemColorsDidChangeNotification)
-    let windowStyle = WindowAppearancePreference()
-    let settingsDisclosure = SettingsDisclosurePreference()
-    let updates = UpdateChecker(source: UpdateBuild.source())
     let autoLogout = AutoLogoutMonitor()
     let activityLog = ActivityLog()
     let sleepRecorder: SystemSleepRecorder
     let wakeScheduler: WakeScheduler
+    private var rightClickMonitor: Any?
+    private var isPreparingToQuit = false
     private(set) lazy var activityLogWindow = ActivityLogWindowController(log: activityLog, accent: accent)
     private(set) lazy var watchedAppsWindow = WatchedAppsWindowController(
         preferences: modeController.preferences,
         accent: accent
     )
 
+    private(set) lazy var wakeAlarmsWindow = WakeAlarmsWindowController(
+        preferences: wakeScheduler.preferences,
+        scheduler: wakeScheduler,
+        setup: helperSetup,
+        accent: accent
+    )
+
     override init() {
         helperClient = HelperClient()
+        #if PERSONAL_PREVIEW
+        let displayAssertion: PowerAssertion = PreviewPowerAssertion()
+        let brightness: DisplayBrightnessControlling = PreviewBrightness()
+        #else
+        let displayAssertion: PowerAssertion = DisplaySleepAssertion()
+        let brightness: DisplayBrightnessControlling = DisplayBrightness()
+        #endif
         let controller = ModeController(
+            displayAssertion: displayAssertion,
             helper: helperClient,
             sessions: XPCHelperConnection(),
             preferences: SafetyPreferences(),
             notifier: UserNotificationNotifier(),
             activityLog: activityLog,
-            idleEvents: XPCHelperConnection()
+            idleEvents: XPCHelperConnection(),
+            brightness: brightness
         )
         let scheduler = WakeScheduler(
             preferences: WakePreferences(),
@@ -52,10 +67,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        launchAtLogin.enableOnFirstLaunch()
+        rightClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
+            let handled = MainActor.assumeIsolated {
+                guard let self, MenuBarWindow.isStatusClick(event) else { return false }
+                Task {
+                    guard !self.modeController.isQuitting else { return }
+                    let target: Mode = self.modeController.mode == .lidClosed ? .off : .lidClosed
+                    await self.helperSetup.select(target)
+                    if self.modeController.mode != target || self.modeController.message != nil {
+                        MenuBarWindow.show()
+                    }
+                }
+                return true
+            }
+            return handled ? nil : event
+        }
         sleepRecorder.start()
         wakeScheduler.start()
-        updates.start()
         Task {
             await helperClient.updateIfOutdated()
             await modeController.clearLeftover()
@@ -64,15 +92,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard modeController.mode != .off else { return .terminateNow }
+        guard !isPreparingToQuit else { return .terminateLater }
+        isPreparingToQuit = true
         Task {
-            try? await modeController.select(.off)
+            while !(await modeController.prepareToQuit()) {
+                MenuBarWindow.show()
+                do {
+                    try await Task.sleep(nanoseconds: 5_000_000_000)
+                } catch {
+                    isPreparingToQuit = false
+                    sender.reply(toApplicationShouldTerminate: false)
+                    return
+                }
+            }
+            isPreparingToQuit = false
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        if let rightClickMonitor { NSEvent.removeMonitor(rightClickMonitor) }
         wakeScheduler.appWillTerminate()
     }
 }
@@ -88,13 +128,7 @@ struct LidAwakeApp: App {
                 helperSetup: appDelegate.helperSetup,
                 launchAtLogin: appDelegate.launchAtLogin,
                 accent: appDelegate.accent,
-                windowStyle: appDelegate.windowStyle,
-                disclosure: appDelegate.settingsDisclosure,
-                updates: appDelegate.updates,
                 autoLogout: appDelegate.autoLogout,
-                wake: appDelegate.wakeScheduler,
-                wakePreferences: appDelegate.wakeScheduler.preferences,
-                idleSource: XPCHelperConnection(),
                 openActivityLog: {
                     // The row is in the menu bar window, which is key while it is open.
                     if let window = NSApp.keyWindow {
@@ -107,6 +141,10 @@ struct LidAwakeApp: App {
                         MenuBarWindow.close(window)
                     }
                     appDelegate.watchedAppsWindow.show()
+                },
+                openWakeAlarms: {
+                    if let window = NSApp.keyWindow { MenuBarWindow.close(window) }
+                    appDelegate.wakeAlarmsWindow.show()
                 }
             )
         } label: {
@@ -115,3 +153,22 @@ struct LidAwakeApp: App {
         .menuBarExtraStyle(.window)
     }
 }
+
+#if PERSONAL_PREVIEW
+/// Never reads saved brightness recovery or touches the real display.
+@MainActor
+private struct PreviewBrightness: DisplayBrightnessControlling {
+    func sampleWhileOpen() -> DisplayBrightnessResult { .unavailable }
+    func close() -> DisplayBrightnessResult { .unavailable }
+    func restore() -> DisplayBrightnessResult { .unchanged }
+}
+
+/// A local UI preview must not change even the unprivileged sleep assertions.
+private final class PreviewPowerAssertion: PowerAssertion {
+    var isHeld: Bool { false }
+    func acquire() throws {
+        throw HelperError.notReady("UI preview: power controls are disabled until Developer ID signing is configured.")
+    }
+    func release() {}
+}
+#endif

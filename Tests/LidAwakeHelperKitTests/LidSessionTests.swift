@@ -1,8 +1,33 @@
+import Darwin
 import LidAwakeShared
 import XCTest
 @testable import LidAwakeHelperKit
 
+private func canonicalTemporaryDirectory() throws -> URL {
+    let path = try XCTUnwrap(realpath(FileManager.default.temporaryDirectory.path, nil))
+    defer { free(path) }
+    return URL(fileURLWithPath: String(cString: path), isDirectory: true)
+}
+
 private struct FakeError: Error {}
+
+private final class FakeClosedPower: ClosedLidPowerManaging {
+    var hasPendingRestore = false
+    var restoreFails = false
+    var updateFails = false
+    var onRestore: (() -> Void)?
+    private(set) var updates: [Bool] = []
+    func update(closed: Bool, source: PowerSource) throws {
+        updates.append(closed)
+        if updateFails { throw FakeError() }
+        hasPendingRestore = closed
+    }
+    func restore() throws {
+        onRestore?()
+        if restoreFails { throw FakeError() }
+        hasPendingRestore = false
+    }
+}
 
 private final class FakeFlag: SleepFlag {
     var value: Bool
@@ -38,6 +63,7 @@ private final class FakeMarker: OwnershipMarker {
         onSet?()
         isSet = true
     }
+    func validate() throws {}
     func clear() throws { isSet = false }
 }
 
@@ -120,6 +146,8 @@ final class LidSessionTests: XCTestCase {
     private let thermal = FakeThermal()
     private let idle = FakeIdle()
     private let stopReasons = FakeStopReasons()
+    private let closedPower = FakeClosedPower()
+    private var lidClosed = false
     private let wallTime = Date(timeIntervalSince1970: 1_800_000_000)
     private let noLimits = SafetySettings.off
 
@@ -139,8 +167,154 @@ final class LidSessionTests: XCTestCase {
             thermal: thermal,
             idle: idle,
             stopReasons: stopReasons,
+            closedPower: closedPower,
+            lidClosed: { [unowned self] in self.lidClosed },
             wallClock: { [wallTime] in wallTime }
         )
+    }
+
+    func testEnergyRestoresBeforeSleepAndRetainsRecoveryOnFailure() {
+        lidClosed = true
+        let session = makeSession()
+        XCTAssertEqual(session.start(lease: 120, safety: noLimits), .ok)
+        closedPower.restoreFails = true
+        XCTAssertEqual(session.end().code, .powerModeFailed)
+        XCTAssertFalse(flag.value, "Safety stop releases sleep even while energy recovery is pending")
+        XCTAssertTrue(session.needsHelper)
+        closedPower.restoreFails = false
+        closedPower.onRestore = { [flag] in XCTAssertFalse(flag.value) }
+        XCTAssertEqual(session.retryLeftover(), .ok)
+        XCTAssertFalse(flag.value)
+        XCTAssertFalse(session.needsHelper)
+    }
+
+    func testUnsafeRealMarkerCannotClearAForeignSleepFlag() throws {
+        let base = try canonicalTemporaryDirectory().appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let target = base.appendingPathComponent("unrelated")
+        try Data("untouched".utf8).write(to: target)
+        let markerPath = base.appendingPathComponent("sleep-disabled-by-lidawake")
+        try FileManager.default.createSymbolicLink(at: markerPath, withDestinationURL: target)
+        let fileMarker = FileOwnershipMarker(directory: base)
+        let session = LidSession(flag: flag, marker: fileMarker, clock: clock, awakeClock: awakeClock,
+            power: power, thermal: thermal, idle: idle, stopReasons: stopReasons,
+            closedPower: closedPower, lidClosed: { false })
+        flag.value = true
+        XCTAssertEqual(session.clearLeftover().code, .markerFailed)
+        XCTAssertTrue(flag.value)
+        XCTAssertTrue(flag.writes.isEmpty)
+        XCTAssertEqual(try Data(contentsOf: target), Data("untouched".utf8))
+    }
+
+    func testFailedEnergyRestoreDuringPauseCannotLoseSleepOwnershipOnResume() {
+        lidClosed = true
+        let session = makeSession()
+        let charging = SafetySettings(timerSeconds: 0, batteryLimitPercent: 0, thermalProtection: false, chargingOnly: true)
+        XCTAssertEqual(session.start(lease: 120, safety: charging), .ok)
+        closedPower.restoreFails = true
+        power.reading = PowerReading(battery: .percent(80), source: .battery)
+        XCTAssertEqual(session.enforceLimits()?.code, .powerModeFailed)
+        XCTAssertTrue(session.isPaused)
+        XCTAssertFalse(flag.value)
+        XCTAssertFalse(marker.isSet)
+        closedPower.restoreFails = false
+        power.reading = PowerReading(battery: .percent(80), source: .ac)
+        XCTAssertEqual(session.renew(lease: 120, safety: charging), .ok)
+        XCTAssertTrue(flag.value)
+        XCTAssertTrue(marker.isSet)
+        XCTAssertEqual(session.end(), .ok)
+        XCTAssertFalse(flag.value)
+    }
+
+    func testFailedClosedLidActivationRollsBackSleepFlag() {
+        lidClosed = true
+        closedPower.updateFails = true
+        let session = makeSession()
+        XCTAssertEqual(session.start(lease: 120, safety: noLimits).code, .powerModeFailed)
+        XCTAssertFalse(flag.value)
+        XCTAssertFalse(session.isActive)
+        XCTAssertEqual(stopReasons.record?.reason, .powerModeFailed)
+    }
+
+    func testLowPowerOverrideCanBeDisabledAndReenabledWithoutEndingKeepAwake() {
+        lidClosed = true
+        let disabled = SafetySettings(timerSeconds: 0, batteryLimitPercent: 0, thermalProtection: false,
+            lowPowerWhenClosed: false)
+        let session = makeSession()
+        XCTAssertEqual(session.start(lease: 120, safety: disabled), .ok)
+        XCTAssertTrue(flag.value)
+        XCTAssertTrue(closedPower.updates.isEmpty)
+        XCTAssertFalse(closedPower.hasPendingRestore)
+        XCTAssertEqual(session.renew(lease: 120, safety: noLimits), .ok)
+        XCTAssertEqual(closedPower.updates, [true])
+        XCTAssertTrue(closedPower.hasPendingRestore)
+
+        XCTAssertEqual(session.renew(lease: 120, safety: disabled), .ok)
+        XCTAssertFalse(closedPower.hasPendingRestore)
+        XCTAssertNil(session.enforceLimits())
+        XCTAssertEqual(closedPower.updates, [true], "Disabled enforcement restores without applying Low Power")
+        XCTAssertTrue(session.isActive)
+        XCTAssertTrue(flag.value)
+        XCTAssertEqual(session.end(), .ok)
+        XCTAssertFalse(flag.value)
+    }
+
+    func testDisabledLowPowerDoesNotRequireLidOrPowerModeSupport() {
+        closedPower.updateFails = true
+        let session = LidSession(flag: flag, marker: marker, clock: clock, awakeClock: awakeClock,
+            power: power, thermal: thermal, idle: idle, stopReasons: stopReasons,
+            closedPower: closedPower, lidClosed: { nil })
+        let disabled = SafetySettings(timerSeconds: 0, batteryLimitPercent: 0, thermalProtection: false,
+            lowPowerWhenClosed: false)
+        XCTAssertEqual(session.start(lease: 120, safety: disabled), .ok)
+        XCTAssertTrue(session.isActive)
+        XCTAssertTrue(flag.value)
+        XCTAssertTrue(closedPower.updates.isEmpty)
+        XCTAssertEqual(session.end(), .ok)
+    }
+
+    func testDisabledLowPowerRecoveryFailureKeepsAwakeAndRetries() {
+        lidClosed = true
+        let session = makeSession()
+        XCTAssertEqual(session.start(lease: 120, safety: noLimits), .ok)
+        let disabled = SafetySettings(timerSeconds: 0, batteryLimitPercent: 0, thermalProtection: false,
+            lowPowerWhenClosed: false)
+        closedPower.restoreFails = true
+        let failed = session.renew(lease: 120, safety: disabled)
+        XCTAssertEqual(failed.code, .powerModeFailed)
+        XCTAssertNotNil(failed.message)
+        XCTAssertTrue(session.isActive)
+        XCTAssertTrue(flag.value)
+        XCTAssertTrue(closedPower.hasPendingRestore)
+        XCTAssertEqual(session.enforceLimits()?.code, .powerModeFailed)
+        XCTAssertTrue(session.isActive)
+        XCTAssertTrue(flag.value)
+
+        closedPower.restoreFails = false
+        XCTAssertNil(session.enforceLimits())
+        XCTAssertFalse(closedPower.hasPendingRestore)
+        XCTAssertTrue(session.isActive)
+        XCTAssertTrue(flag.value)
+        XCTAssertEqual(session.end(), .ok)
+    }
+
+    func testDisabledLowPowerCanStartWhileEarlierRecoveryRemainsPending() {
+        closedPower.hasPendingRestore = true
+        closedPower.restoreFails = true
+        let disabled = SafetySettings(timerSeconds: 0, batteryLimitPercent: 0, thermalProtection: false,
+            lowPowerWhenClosed: false)
+        let session = makeSession()
+        let failed = session.start(lease: 120, safety: disabled)
+        XCTAssertEqual(failed.code, .powerModeFailed)
+        XCTAssertNotNil(failed.message)
+        XCTAssertTrue(session.isActive)
+        XCTAssertTrue(flag.value)
+        XCTAssertTrue(closedPower.hasPendingRestore)
+        closedPower.restoreFails = false
+        XCTAssertNil(session.enforceLimits())
+        XCTAssertFalse(closedPower.hasPendingRestore)
+        XCTAssertEqual(session.end(), .ok)
     }
 
     func testOwnSessionSetsAndClearsFlag() {
@@ -446,7 +620,7 @@ final class LidSessionTests: XCTestCase {
     }
 
     func testMarkerSurvivesRecreation() throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = try canonicalTemporaryDirectory()
             .appendingPathComponent("LidSessionTests-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -458,7 +632,9 @@ final class LidSessionTests: XCTestCase {
             power: power,
             thermal: thermal,
             idle: idle,
-            stopReasons: stopReasons
+            stopReasons: stopReasons,
+            closedPower: closedPower,
+            lidClosed: { false }
         )
         XCTAssertEqual(first.start(lease: 120, safety: noLimits), .ok)
         XCTAssertTrue(flag.value)
@@ -473,7 +649,9 @@ final class LidSessionTests: XCTestCase {
             power: power,
             thermal: thermal,
             idle: idle,
-            stopReasons: stopReasons
+            stopReasons: stopReasons,
+            closedPower: closedPower,
+            lidClosed: { false }
         )
         XCTAssertFalse(second.isActive)
         XCTAssertEqual(second.clearLeftover(), .ok)
@@ -690,7 +868,7 @@ final class LidSessionTests: XCTestCase {
     }
 
     func testStopReasonSurvivesRecreationAndClears() throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = try canonicalTemporaryDirectory()
             .appendingPathComponent("LidSessionTests-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let make = {
@@ -703,6 +881,8 @@ final class LidSessionTests: XCTestCase {
                 thermal: self.thermal,
                 idle: self.idle,
                 stopReasons: FileStopReasonStore(directory: directory),
+                closedPower: self.closedPower,
+                lidClosed: { false },
                 wallClock: { [wallTime = self.wallTime] in wallTime }
             )
         }

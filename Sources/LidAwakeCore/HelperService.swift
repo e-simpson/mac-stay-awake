@@ -1,6 +1,7 @@
 import Foundation
 import LidAwakeShared
 import ServiceManagement
+import Security
 
 public enum HelperRegistration: Equatable {
     case notRegistered
@@ -57,7 +58,7 @@ public enum HelperError: Error, Equatable, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .notInApplications:
-            return String(localized: "LidAwake must be in /Applications to install the helper.")
+            return String(localized: "MacStayAwake must be in /Applications to install the helper.")
         case .timeout:
             return String(localized: "The helper did not respond.")
         case .connection(let message), .notReady(let message), .helper(_, let message):
@@ -87,7 +88,25 @@ public struct DaemonHelperService: HelperService {
     }
 
     public func register() throws {
+        #if PERSONAL_PREVIEW
+        throw HelperError.notReady("Preview builds cannot register the privileged helper. See SIGNING.md.")
+        #else
+        // Check both sides before asking launchd to run the helper as root.
+        for (url, text) in [
+            (Bundle.main.bundleURL, HelperConstants.appRequirement),
+            (HelperBuild.executableURL(inBundle: Bundle.main.bundleURL), HelperConstants.helperRequirement),
+        ] {
+            var code: SecStaticCode?
+            var requirement: SecRequirement?
+            guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess,
+                  SecRequirementCreateWithString(text as CFString, [], &requirement) == errSecSuccess,
+                  let code, let requirement,
+                  SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSStrictValidate), requirement) == errSecSuccess else {
+                throw HelperError.notReady("The app and helper need your own Developer ID signatures. See SIGNING.md.")
+            }
+        }
         try service.register()
+        #endif
     }
 
     public func unregister() async throws {
@@ -130,7 +149,8 @@ public struct XPCHelperConnection: HelperConnecting, LidSessionService, IdleStat
                 thermalProtection: safety.thermalProtection,
                 chargingOnly: safety.chargingOnly,
                 idleSleepMinutes: safety.idleSleepMinutes,
-                watchedAppPaths: safety.watchedAppPaths
+                watchedAppPaths: safety.watchedAppPaths,
+                lowPowerWhenClosed: safety.lowPowerWhenClosed
             ) { done(Self.result($0, $1)) }
         }
     }
@@ -144,7 +164,8 @@ public struct XPCHelperConnection: HelperConnecting, LidSessionService, IdleStat
                 thermalProtection: safety.thermalProtection,
                 chargingOnly: safety.chargingOnly,
                 idleSleepMinutes: safety.idleSleepMinutes,
-                watchedAppPaths: safety.watchedAppPaths
+                watchedAppPaths: safety.watchedAppPaths,
+                lowPowerWhenClosed: safety.lowPowerWhenClosed
             ) { done(Self.result($0, $1)) }
         }
     }
@@ -239,9 +260,9 @@ public struct XPCHelperConnection: HelperConnecting, LidSessionService, IdleStat
         }
     }
 
-    public func setScheduledWake(minuteOfDay: Int) async throws {
+    public func setScheduledWakes(minutesOfDay: [Int]) async throws {
         try await call(timeout: timeout) { helper, done in
-            helper.setScheduledWake(minuteOfDay: minuteOfDay) { done(Self.result($0, $1)) }
+            helper.setScheduledWakes(minutesOfDay: minutesOfDay) { done(Self.result($0, $1)) }
         }
     }
 

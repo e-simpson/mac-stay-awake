@@ -6,11 +6,21 @@ import LidAwakeShared
 public final class ModeController: ObservableObject, ScheduledModeStarting {
     @Published public private(set) var mode: Mode = .off
     @Published public private(set) var message: ModeMessage?
-    @Published public private(set) var isBusy = false
+    @Published public private(set) var isBusy = false {
+        didSet {
+            if !isBusy {
+                let waiters = idleWaiters
+                idleWaiters.removeAll()
+                for waiter in waiters { waiter.resume() }
+            }
+        }
+    }
     /// Monotonic time the current mode started; the timer counts from here.
     @Published public private(set) var modeStartedAt: TimeInterval?
-    /// True while the helper holds Run with Lid Closed paused on battery power.
+    /// True while the helper holds Keep alive paused on battery power.
     @Published public private(set) var isPaused = false
+
+    @Published public private(set) var isQuitting = false
 
     public let preferences: SafetyPreferences
 
@@ -25,6 +35,11 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
     private let screenLocker: ScreenLocking
     private let activityLog: ActivityLogging
     private let idleEvents: IdleEventFetching
+    private let brightness: DisplayBrightnessControlling
+    private var helperRecoveryNeeded: Bool {
+        get { preferences.helperRecoveryPending }
+        set { preferences.helperRecoveryPending = newValue }
+    }
     private let leaseSeconds: Int
     private let renewalSleep: () async throws -> Void
     private let timerCheckSleep: () async throws -> Void
@@ -33,6 +48,8 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
     private var timerTask: Task<Void, Never>?
     private var preferenceChanges: AnyCancellable?
     private var requestedAuthorization = false
+    private var stopRequested = false
+    private var idleWaiters: [CheckedContinuation<Void, Never>] = []
 
     public init(
         displayAssertion: PowerAssertion = DisplaySleepAssertion(),
@@ -47,6 +64,7 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
         screenLocker: ScreenLocking = LoginScreenLocker(),
         activityLog: ActivityLogging = NoActivityLog(),
         idleEvents: IdleEventFetching = NoIdleEvents(),
+        brightness: DisplayBrightnessControlling,
         leaseSeconds: Int = 120,
         renewalSleep: @escaping () async throws -> Void = { try await Task.sleep(nanoseconds: 30_000_000_000) },
         timerCheckSleep: @escaping () async throws -> Void = { try await Task.sleep(nanoseconds: 5_000_000_000) },
@@ -64,6 +82,7 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
         self.screenLocker = screenLocker
         self.activityLog = activityLog
         self.idleEvents = idleEvents
+        self.brightness = brightness
         self.leaseSeconds = leaseSeconds
         self.renewalSleep = renewalSleep
         self.timerCheckSleep = timerCheckSleep
@@ -77,6 +96,11 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
         lidMonitor.start { [weak self] closed in
             MainActor.assumeIsolated { self?.lidChanged(closed: closed) }
         }
+        timerTask = repeating(timerCheckSleep) { controller in
+            await controller.checkTimer()
+            await controller.reconcileBrightness()
+        }
+        try? syncBrightness(active: false)
     }
 
     /// Shown under the lock setting when it is on but this macOS cannot lock the screen.
@@ -90,11 +114,46 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
         return max(0, TimeInterval(limit) - (now() - modeStartedAt))
     }
 
+    /// Quit completes only after temporary power and display overrides have recovered.
+    public func prepareToQuit() async -> Bool {
+        isQuitting = true
+        do {
+            try await select(.off)
+        } catch {
+            showFailure(error.localizedDescription)
+            return false
+        }
+        while isBusy {
+            await withCheckedContinuation { idleWaiters.append($0) }
+        }
+        isBusy = true
+        defer { isBusy = false }
+        var recovered = true
+        let display = brightness.restore()
+        if display == .pending || display == .unavailable {
+            showFailure("Waiting for the built-in display to restore brightness before quitting.")
+            recovered = false
+        }
+        if await helper.isReady() {
+            do {
+                try await endHelperSession()
+            } catch {
+                showFailure("Power recovery pending: \(error.localizedDescription)")
+                recovered = false
+            }
+        } else if helperRecoveryNeeded {
+            showFailure("Waiting for the helper to restore power settings before quitting.")
+            recovered = false
+        }
+        if recovered { message = nil }
+        return recovered
+    }
+
     public func select(_ newMode: Mode) async throws {
         try await select(newMode, bySchedule: false)
     }
 
-    /// Run with Lid Closed with Sleep when idle for this session, only from Off and only on power.
+    /// Keep alive with Sleep when idle for this session, only from Off and only on power.
     /// Called after the Mac woke on schedule.
     public func turnOnBySchedule() async {
         guard mode == .off, !isBusy else { return }
@@ -115,7 +174,19 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
     }
 
     private func select(_ newMode: Mode, bySchedule: Bool) async throws {
-        guard newMode != mode, !isBusy else { return }
+        if isQuitting, newMode != .off {
+            throw HelperError.notReady("Restoring settings before quitting.")
+        }
+        if isBusy {
+            if newMode == .off {
+                stopRequested = true
+                await withCheckedContinuation { idleWaiters.append($0) }
+                if mode != .off { try await select(.off, bySchedule: false) }
+            }
+            return
+        }
+        guard newMode != mode else { return }
+        stopRequested = false
         isBusy = true
         defer { isBusy = false }
         message = nil
@@ -142,13 +213,43 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
                 mode = .off
                 recordTurnedOffByUser(previous)
                 modeEnded(previous)
+                guard !stopRequested else { return }
                 try displayAssertion.acquire()
                 mode = .keepScreenOn
                 activityLog.record(.modeOn(.keepScreenOn))
                 startTimer()
             case .lidClosed:
                 try await helper.prepareForSession()
-                try await sessions.startSession(leaseSeconds: leaseSeconds, safety: preferences.helperSettings)
+                if stopRequested {
+                    await leaveCurrentMode()
+                    mode = .off
+                    return
+                }
+                do {
+                    // A timeout can arrive after the helper applied changes; reconcile it too.
+                    let safety = preferences.helperSettings
+                    do {
+                        helperRecoveryNeeded = true
+                        try await sessions.startSession(leaseSeconds: leaseSeconds, safety: safety)
+                    } catch {
+                        if !(await acceptOptionalPowerRecovery(error, safety: safety)) { throw error }
+                    }
+                    guard !stopRequested else { throw CancellationError() }
+                    try syncBrightness(active: true)
+                } catch {
+                    do {
+                        try await endHelperSession()
+                    } catch {
+                        message = .failed("Power recovery pending: \(error.localizedDescription)")
+                    }
+                    _ = brightness.restore()
+                    if stopRequested {
+                        await leaveCurrentMode()
+                        mode = .off
+                        return
+                    }
+                    throw error
+                }
                 displayAssertion.release()
                 activity.begin()
                 recordTurnedOffByUser(mode)
@@ -157,9 +258,14 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
                 startRenewals()
                 startTimer()
                 await updatePauseState()
+                if stopRequested {
+                    await leaveCurrentMode()
+                    mode = .off
+                    modeEnded(.lidClosed)
+                }
             }
         } catch {
-            message = .couldNotTurnOn(error.localizedDescription)
+            if message == nil { message = .couldNotTurnOn(error.localizedDescription) }
             throw error
         }
     }
@@ -180,10 +286,12 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
             // A session the helper still holds belongs to an earlier run of the app; its lease would keep
             // the Mac awake for up to two minutes. Without a status the flag is cleared as before.
             if let status = try? await sessions.sessionStatus(), status.session != .noSession {
-                try await sessions.endSession()
+                try await endHelperSession()
                 endedSession = true
             } else {
+                helperRecoveryNeeded = true
                 try await sessions.clearLeftover()
+                helperRecoveryNeeded = false
             }
         } catch {
             message = .failed(error.localizedDescription)
@@ -201,27 +309,50 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
 
     func renew() async {
         guard mode == .lidClosed, !isBusy else { return }
+        // Serialize the complete RPC/status lifecycle with mode transitions. Standard/Quit waits
+        // for it, so old replies cannot end or update the pause state of a newer session.
+        isBusy = true
+        stopRequested = false
+        defer { isBusy = false }
         do {
-            try await sessions.renewSession(leaseSeconds: leaseSeconds, safety: preferences.helperSettings)
+            let safety = preferences.helperSettings
+            do {
+                try await sessions.renewSession(leaseSeconds: leaseSeconds, safety: safety)
+            } catch {
+                if !(await acceptOptionalPowerRecovery(error, safety: safety)) { throw error }
+            }
             await recordIdleEvents()
             await updatePauseState()
+            if stopRequested {
+                await leaveCurrentMode()
+                mode = .off
+                modeEnded(.lidClosed)
+            } else {
+                try syncBrightness(active: !isPaused)
+            }
         } catch {
-            // The user may have left the mode while the renewal was in flight.
-            guard mode == .lidClosed, !isBusy else { return }
-            isBusy = true
-            defer { isBusy = false }
             await leaveCurrentMode()
             mode = .off
             if case HelperError.helper(.noSession, _) = error {
                 await recordIdleEvents()
-                if await reportStopReason(mode: .lidClosed) {
-                    return
-                }
+                if await reportStopReason(mode: .lidClosed) { return }
             }
-            message = .turnedOffWithError(error.localizedDescription)
-            activityLog.record(.modeOff(.lidClosed, .error(error.localizedDescription)))
+            let detail = error.localizedDescription
+            if case .failed(let recovery)? = message {
+                message = .failed("\(detail) Recovery pending: \(recovery)")
+            } else {
+                message = .turnedOffWithError(detail)
+            }
+            activityLog.record(.modeOff(.lidClosed, .error(detail)))
             modeEnded(.lidClosed)
         }
+    }
+
+    private func acceptOptionalPowerRecovery(_ error: Error, safety: SafetySettings) async -> Bool {
+        guard !safety.lowPowerWhenClosed, case HelperError.helper(.powerModeFailed, let detail) = error,
+              let status = try? await sessions.sessionStatus(), status.session != .noSession else { return false }
+        showFailure(detail)
+        return true
     }
 
     func checkTimer() async {
@@ -242,6 +373,10 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
     }
 
     private func safetyChanged() async {
+        // A change during a helper RPC must be sent once that operation releases the controller.
+        while isBusy {
+            await withCheckedContinuation { idleWaiters.append($0) }
+        }
         switch mode {
         case .off:
             break
@@ -252,10 +387,70 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
         }
     }
 
-    // Run with Lid Closed keeps the Mac awake, so the usual lock on sleep never happens.
+    // Keep alive keeps the Mac awake, so the usual lock on sleep never happens.
     private func lidChanged(closed: Bool) {
-        guard closed, mode == .lidClosed, preferences.lockOnLidCloseEnabled, screenLocker.isAvailable else { return }
-        screenLocker.lock()
+        if closed, mode == .lidClosed, preferences.lockOnLidCloseEnabled, screenLocker.isAvailable {
+            screenLocker.lock()
+        }
+        Task { @MainActor [weak self] in await self?.reconcileBrightness() }
+    }
+
+    private func syncBrightness(active: Bool) throws {
+        let displayActive = active && preferences.displayOffWhenClosed
+        let lidState = lidMonitor.isClosed
+        if displayActive && lidState == nil { throw brightnessError("The lid state could not be read.") }
+        let closed = lidState == true
+        let result: DisplayBrightnessResult
+        if displayActive && closed {
+            result = brightness.close()
+        } else {
+            result = brightness.restore()
+            if preferences.displayOffWhenClosed, lidState == false, result != .pending, result != .unavailable,
+               brightness.sampleWhileOpen() == .unavailable, displayActive {
+                throw brightnessError("Built-in display brightness is unavailable.")
+            }
+        }
+        if !preferences.displayOffWhenClosed, result == .pending || result == .unavailable {
+            showFailure("Display brightness recovery is pending until the built-in display is available.")
+            return
+        }
+        if result == .unavailable {
+            throw brightnessError("Built-in display brightness is unavailable; recovery may still be pending.")
+        }
+        if result == .pending && !(displayActive && closed) {
+            throw brightnessError("Display brightness recovery is pending until the built-in display is available.")
+        }
+        if displayActive && closed && result == .preservedExternalChange {
+            throw brightnessError("Another brightness setting was preserved. Re-enable the session to try again.")
+        }
+    }
+
+    private func brightnessError(_ message: String) -> NSError {
+        NSError(domain: HelperConstants.appBundleIdentifier, code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+
+    private func reconcileBrightness() async {
+        guard !isBusy else { return }
+        do {
+            try syncBrightness(active: mode == .lidClosed && !isPaused)
+        } catch {
+            if mode == .lidClosed {
+                isBusy = true
+                await leaveCurrentMode()
+                mode = .off
+                modeEnded(.lidClosed)
+                isBusy = false
+            }
+            showFailure(error.localizedDescription)
+        }
+    }
+
+    private func showFailure(_ detail: String) {
+        if case .failed(let existing)? = message {
+            if !existing.contains(detail) { message = .failed("\(existing) \(detail)") }
+        } else {
+            message = .failed(detail)
+        }
     }
 
     private func powerSourceChanged() async {
@@ -314,7 +509,11 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
     private func report(_ record: StopRecord, mode: Mode) {
         let body = StopNotice.body(for: record)
         notifier.post(title: StopNotice.title, body: body)
-        message = .turnedOff(body)
+        if case .failed(let recovery)? = message {
+            message = .failed("\(body) Recovery pending: \(recovery)")
+        } else {
+            message = .turnedOff(body)
+        }
         let reason = ModeOffReason.stopped(
             record.reason,
             batteryPercent: record.batteryPercent,
@@ -337,9 +536,13 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
         preferences.endIdleSleepSession()
     }
 
+    private func endHelperSession() async throws {
+        helperRecoveryNeeded = true
+        try await sessions.endSession()
+        helperRecoveryNeeded = false
+    }
+
     private func leaveCurrentMode() async {
-        timerTask?.cancel()
-        timerTask = nil
         modeStartedAt = nil
         switch mode {
         case .off:
@@ -351,11 +554,15 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
             renewalTask = nil
             isPaused = false
             do {
-                try await sessions.endSession()
+                try await endHelperSession()
             } catch {
-                message = .failed(error.localizedDescription)
+                showFailure(error.localizedDescription)
             }
             activity.end()
+        }
+        let restored = brightness.restore()
+        if restored == .pending || restored == .unavailable {
+            showFailure("Display brightness recovery is pending until the built-in display is available.")
         }
     }
 
@@ -365,8 +572,7 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
 
     private func startTimer() {
         modeStartedAt = now()
-        timerTask?.cancel()
-        timerTask = repeating(timerCheckSleep) { await $0.checkTimer() }
+
     }
 
     private func repeating(

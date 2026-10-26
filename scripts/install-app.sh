@@ -4,27 +4,22 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-SOURCE="build/LidAwake.app"
-TARGET="/Applications/LidAwake.app"
+SOURCE="build/MacStayAwake.app"
+TARGET="/Applications/MacStayAwake.app"
 
 if [[ ! -d "$SOURCE" ]]; then
-    echo "ERROR: $SOURCE not found. Run scripts/build-app.sh first." >&2
+    echo "ERROR: $SOURCE not found. Run scripts/build-app.sh first. Preview builds cannot be installed by this script." >&2
+    exit 1
+fi
+if [[ -e "$TARGET" || -L "$TARGET" ]]; then
+    echo "ERROR: Quit MacStayAwake and move $TARGET to Trash before replacing it." >&2
     exit 1
 fi
 
-if pgrep -x LidAwake >/dev/null; then
-    pkill -x LidAwake || true
-    for _ in {1..50}; do
-        pgrep -x LidAwake >/dev/null || break
-        sleep 0.1
-    done
-    if pgrep -x LidAwake >/dev/null; then
-        echo "ERROR: LidAwake is still running." >&2
-        exit 1
-    fi
-fi
+REQUIREMENTS="$(swift -e "$(cat Sources/LidAwakeShared/HelperConstants.swift)"$'\n''print([HelperConstants.appRequirement, HelperConstants.helperRequirement].joined(separator: "\t"))')"
+IFS=$'\t' read -r APP_REQ HELPER_REQ <<< "$REQUIREMENTS"
+codesign --verify --strict -R="$APP_REQ" "$SOURCE"
+codesign --verify --strict -R="$HELPER_REQ" "$SOURCE/Contents/MacOS/LidAwakeHelper"
 
-rm -rf "$TARGET"
 ditto "$SOURCE" "$TARGET"
-
-echo "Installed $TARGET"
+echo "Installed $TARGET. Helper registration still requires approval in System Settings."

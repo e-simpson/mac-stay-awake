@@ -1,7 +1,7 @@
 /* Modes */
 "Off" = "Off";
 "Keep Screen On" = "Keep Screen On";
-"Run with Lid Closed" = "Run with Lid Closed";
+"Keep alive" = "Keep alive";
 "The Mac sleeps as usual." = "The Mac sleeps as usual.";
 "For stepping away from the desk. Closing the lid still puts the Mac to sleep." = "For stepping away from the desk. Closing the lid still puts the Mac to sleep.";
 "For the road. Keeps working with the lid shut or the screen locked." = "For the road. Keeps working with the lid shut or the screen locked.";
@@ -53,7 +53,7 @@
 "Screen lock is not available on this macOS version." = "Screen lock is not available on this macOS version.";
 "Launch at login" = "Launch at login";
 "Turn it on in System Settings > General > Login Items & Extensions." = "Turn it on in System Settings > General > Login Items & Extensions.";
-"Move LidAwake to the Applications folder to launch it at login." = "Move LidAwake to the Applications folder to launch it at login.";
+"Move MacStayAwake to the Applications folder to launch it at login." = "Move MacStayAwake to the Applications folder to launch it at login.";
 "Appearance" = "Appearance";
 "Glass" = "Glass";
 "Solid" = "Solid";
@@ -64,16 +64,16 @@
 "Settings" = "Settings";
 "Collapsed" = "Collapsed";
 "Expanded" = "Expanded";
-"Quit LidAwake" = "Quit LidAwake";
+"Quit MacStayAwake" = "Quit MacStayAwake";
 
 /* Helper messages */
 "Permission needed" = "Permission needed";
-"Allow LidAwake in System Settings > General > Login Items & Extensions. The mode turns on as soon as you do." = "Allow LidAwake in System Settings > General > Login Items & Extensions. The mode turns on as soon as you do.";
-"Allow LidAwake in System Settings > General > Login Items & Extensions, then choose Run with Lid Closed again." = "Allow LidAwake in System Settings > General > Login Items & Extensions, then choose Run with Lid Closed again.";
-"Allow LidAwake in System Settings > General > Login Items & Extensions." = "Allow LidAwake in System Settings > General > Login Items & Extensions.";
-"Move LidAwake to Applications" = "Move LidAwake to Applications";
-"Run with Lid Closed needs the app in the Applications folder." = "Run with Lid Closed needs the app in the Applications folder.";
-"LidAwake must be in /Applications to install the helper." = "LidAwake must be in /Applications to install the helper.";
+"Allow MacStayAwake in System Settings > General > Login Items & Extensions. The mode turns on as soon as you do." = "Allow MacStayAwake in System Settings > General > Login Items & Extensions. The mode turns on as soon as you do.";
+"Allow MacStayAwake in System Settings > General > Login Items & Extensions, then choose Keep alive again." = "Allow MacStayAwake in System Settings > General > Login Items & Extensions, then choose Keep alive again.";
+"Allow MacStayAwake in System Settings > General > Login Items & Extensions." = "Allow MacStayAwake in System Settings > General > Login Items & Extensions.";
+"Move MacStayAwake to Applications" = "Move MacStayAwake to Applications";
+"Keep alive needs the app in the Applications folder." = "Keep alive needs the app in the Applications folder.";
+"MacStayAwake must be in /Applications to install the helper." = "MacStayAwake must be in /Applications to install the helper.";
 "The helper did not start" = "The helper did not start";
 "Install the helper to run with the lid closed." = "Install the helper to run with the lid closed.";
 "The helper could not be installed." = "The helper could not be installed.";
@@ -88,8 +88,8 @@
 /* Mode messages and notifications */
 "Could not turn on" = "Could not turn on";
 "Something went wrong" = "Something went wrong";
-"LidAwake turned off" = "LidAwake turned off";
-"LidAwake was restarted. Turn the mode on again if you need it." = "LidAwake was restarted. Turn the mode on again if you need it.";
+"MacStayAwake turned off" = "MacStayAwake turned off";
+"MacStayAwake was restarted. Turn the mode on again if you need it." = "MacStayAwake was restarted. Turn the mode on again if you need it.";
 "The timer ran out." = "The timer ran out.";
 "The battery dropped below the limit." = "The battery dropped below the limit.";
 "The battery dropped to %lld%%." = "The battery dropped to %lld%%.";
@@ -97,16 +97,16 @@
 "The Mac got too hot." = "The Mac got too hot.";
 "The thermal state could not be read." = "The thermal state could not be read.";
 "The power source could not be read." = "The power source could not be read.";
-"LidAwake closed unexpectedly, so normal sleep was restored." = "LidAwake closed unexpectedly, so normal sleep was restored.";
+"MacStayAwake closed unexpectedly, so normal sleep was restored." = "MacStayAwake closed unexpectedly, so normal sleep was restored.";
 "Nothing was working for %lld minutes." = "Nothing was working for %lld minutes.";
 "Nothing was working for a while." = "Nothing was working for a while.";
-"LidAwake paused" = "LidAwake paused";
+"MacStayAwake paused" = "MacStayAwake paused";
 "Running on battery. It resumes when you plug in." = "Running on battery. It resumes when you plug in.";
 
 /* Updates */
 "Check for updates" = "Check for updates";
 "Update available" = "Update available";
-"LidAwake %@ is available. You have %@." = "LidAwake %@ is available. You have %@.";
+"MacStayAwake %@ is available. You have %@." = "MacStayAwake %@ is available. You have %@.";
 "Download" = "Download";
 
 /* Automatic logout */
@@ -123,8 +123,8 @@
 "Last 200 events · kept only on this Mac" = "Last 200 events · kept only on this Mac";
 "Clear" = "Clear";
 "No events yet" = "No events yet";
-"Run with Lid Closed turned on" = "Run with Lid Closed turned on";
-"Run with Lid Closed turned off" = "Run with Lid Closed turned off";
+"Keep alive turned on" = "Keep alive turned on";
+"Keep alive turned off" = "Keep alive turned off";
 "Keep Screen On turned on" = "Keep Screen On turned on";
 "Keep Screen On turned off" = "Keep Screen On turned off";
 "Paused" = "Paused";
@@ -134,7 +134,7 @@
 "Mac woke up" = "Mac woke up";
 "By you" = "By you";
 "On schedule" = "On schedule";
-"Run with Lid Closed not turned on" = "Run with Lid Closed not turned on";
+"Keep alive not turned on" = "Keep alive not turned on";
 "Not on power" = "Not on power";
 "Mac was on battery or turned off" = "Mac was on battery or turned off";
 "The timer ended after %@." = "The timer ended after %@.";
@@ -144,7 +144,7 @@
 "Busiest app: %@" = "Busiest app: %@";
 "Started programs are working" = "Started programs are working";
 "No work detected, counting %lld minutes" = "No work detected, counting %lld minutes";
-"LidAwake was restarted." = "LidAwake was restarted.";
+"MacStayAwake was restarted." = "MacStayAwake was restarted.";
 "Watched apps" = "Watched apps";
 "Watched Apps" = "Watched Apps";
 "None" = "None";

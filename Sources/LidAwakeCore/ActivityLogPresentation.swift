@@ -56,9 +56,9 @@ public struct ActivityRow: Equatable {
         case .modeOnBySchedule(let mode):
             self.init(title: Self.modeOnTitle(mode), detail: String(localized: "On schedule"), symbol: .modeOn)
         case .modeSkipped(_, let reason):
-            // Only Run with Lid Closed is ever turned on by schedule.
+            // Only Keep alive is ever turned on by schedule.
             self.init(
-                title: String(localized: "Run with Lid Closed not turned on"),
+                title: String(localized: "Keep alive not turned on"),
                 detail: Self.text(for: reason),
                 symbol: .skipped
             )
@@ -104,18 +104,18 @@ public struct ActivityRow: Equatable {
         }
     }
 
-    // Off is never turned on or off by itself, so it shares the wording of Run with Lid Closed.
+    // Off is never turned on or off by itself, so it shares the wording of Keep alive.
     private static func modeOnTitle(_ mode: Mode) -> String {
         switch mode {
         case .keepScreenOn: return String(localized: "Keep Screen On turned on")
-        case .lidClosed, .off: return String(localized: "Run with Lid Closed turned on")
+        case .lidClosed, .off: return String(localized: "Keep alive turned on")
         }
     }
 
     private static func modeOffTitle(_ mode: Mode) -> String {
         switch mode {
         case .keepScreenOn: return String(localized: "Keep Screen On turned off")
-        case .lidClosed, .off: return String(localized: "Run with Lid Closed turned off")
+        case .lidClosed, .off: return String(localized: "Keep alive turned off")
         }
     }
 
@@ -131,7 +131,7 @@ public struct ActivityRow: Equatable {
         case .error(let message):
             return errorText(message)
         case .previousSession:
-            return String(localized: "LidAwake was restarted.")
+            return String(localized: "MacStayAwake was restarted.")
         }
     }
 

@@ -9,15 +9,10 @@ struct ContentView: View {
     @ObservedObject var helperSetup: HelperSetup
     @ObservedObject var launchAtLogin: LaunchAtLogin
     @ObservedObject var accent: AccentPreference
-    @ObservedObject var windowStyle: WindowAppearancePreference
-    @ObservedObject var disclosure: SettingsDisclosurePreference
-    @ObservedObject var updates: UpdateChecker
     @ObservedObject var autoLogout: AutoLogoutMonitor
-    @ObservedObject var wake: WakeScheduler
-    @ObservedObject var wakePreferences: WakePreferences
-    let idleSource: IdleStatusReading
     let openActivityLog: () -> Void
     let openWatchedApps: () -> Void
+    let openWakeAlarms: () -> Void
     var heightLimit: HeightLimit = .screen
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -32,7 +27,6 @@ struct ContentView: View {
     /// The selected mode the card focus last followed.
     @State private var followedMode: Mode = .off
     @State private var isWindowKey = false
-    @State private var idleStatus: IdleStatus?
 
     private let power = IOKitPowerSource()
     private let isSystem26OrLater = WindowLook.isSystem26OrLater
@@ -47,12 +41,16 @@ struct ContentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
                 header
-                modeCards
+                VStack(spacing: 0) {
+                    Divider().padding(.bottom, 4)
+                    modeRows
+                    Divider().padding(.top, 4)
+                }
             }
-            .padding(.top, 14)
-            .padding(.bottom, 12)
+            .padding(.top, 10)
+            .padding(.bottom, 4)
             .padding(.horizontal, 14)
             .background(HeightReader(height: $fixedHeight))
             if let scrollHeight {
@@ -69,7 +67,7 @@ struct ContentView: View {
         .background(WindowGeometryReader(limit: $screenLimit, isScrolling: scrollHeight != nil))
         .background(WindowKeyReader(isKey: $isWindowKey))
         .background(look.drawsOwnBackground ? Palette.solidWindowBackground : .clear)
-        .tint(accentColor)
+        .tint(Palette.accent(.system))
         .onAppear {
             launchAtLogin.refresh()
             autoLogout.refresh()
@@ -97,7 +95,6 @@ struct ContentView: View {
                 cardFocus = focus
             }
         }
-        .task(id: idlePoll) { await pollIdleStatus() }
     }
 
     /// Once a switch is over, gives a focused card's focus to the selected card, or back to the
@@ -122,58 +119,16 @@ struct ContentView: View {
         }
     }
 
-    /// The menu bar window closes when it stops being key, so key means open.
-    private var idlePoll: IdlePoll {
-        IdlePoll(
-            isActive: isWindowKey && controller.mode == .lidClosed && preferences.idleSleepEnabled && !controller.isPaused,
-            minutes: preferences.idleSleepMinutes
-        )
-    }
-
-    private func pollIdleStatus() async {
-        guard idlePoll.isActive else {
-            idleStatus = nil
-            return
-        }
-        while !Task.isCancelled {
-            let status = try? await idleSource.idleStatus()
-            guard !Task.isCancelled else { return }
-            idleStatus = status
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
-        }
-    }
-
-    private var idleNote: IdleSleepNote {
-        IdleSleepNote.make(
-            mode: controller.mode,
-            isEnabled: preferences.idleSleepEnabled,
-            isPaused: controller.isPaused,
-            status: idleStatus
-        )
-    }
-
     /// Everything below the mode cards; it scrolls when the window would not fit on the screen.
     private var scrollingContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
             if !messages.isEmpty {
-                messageBlock
+                messageBlock.padding(.bottom, 8)
             }
-            ForEach(WindowBlockGroup.groups(blocks), id: \.self) { group in
-                switch group {
-                case .block(let block):
-                    view(for: block)
-                case .compactRows(let rows):
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(rows, id: \.self) { block in
-                            view(for: block, isCompact: true)
-                        }
-                    }
-                }
-            }
-            quitRow
+            settingsRows
         }
         .padding(.horizontal, 14)
-        .padding(.bottom, 8)
+        .padding(.bottom, 4)
         .background(HeightReader(height: $scrollingContentHeight))
     }
 
@@ -193,48 +148,66 @@ struct ContentView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(verbatim: "LidAwake")
+        HStack(spacing: 4) {
+            Text(verbatim: "MacStayAwake")
                 .font(.system(size: 13, weight: .semibold))
                 .fixedSize()
             Spacer(minLength: 0)
-            TimelineView(.periodic(from: .now, by: 15)) { _ in
-                if let status = statusLine {
-                    Text(status)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.trailing)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
+            Button("Log", action: openActivityLog)
+                .help("Activity log")
+            Button("Quit") { NSApplication.shared.terminate(nil) }
+                .keyboardShortcut("q", modifiers: .command)
         }
+        .font(.system(size: 13))
+        .buttonStyle(MenuRowButtonStyle(extendsToMargin: false))
     }
 
     private var statusLine: String? {
-        StatusLine.text(
+        let reading = power.read()
+        return StatusLine.text(
             mode: controller.mode,
             isPaused: controller.isPaused,
             timerRemaining: controller.timerRemaining(),
-            battery: controller.mode == .lidClosed ? power.read().battery : .none
+            battery: controller.mode == .lidClosed && preferences.batteryLimitEnabled ? reading.battery : .none,
+            powerSource: reading.source,
+            thermal: preferences.thermalProtectionEnabled ? ProcessInfoThermalState().read() : nil
         )
     }
 
-    private var modeCards: some View {
-        VStack(spacing: 8) {
-            ForEach(Mode.allCases, id: \.self) { mode in
-                ModeCard(
-                    mode: mode,
-                    isSelected: controller.mode == mode,
-                    accent: accentColor,
-                    onAccent: Palette.onAccent(accent.theme),
-                    look: look
-                ) {
-                    Task { await helperSetup.select(mode) }
+    private var modeRows: some View {
+        TimelineView(.periodic(from: .now, by: 15)) { _ in
+            VStack(spacing: 0) {
+                ModeRow(mode: .off, isSelected: controller.mode == .off) {
+                    Task { await helperSetup.select(.off) }
+                } controls: {
+                    EmptyView()
                 }
-                .focused($focusedCard, equals: mode)
+                .focused($focusedCard, equals: .off)
+                ModeRow(
+                    mode: .lidClosed,
+                    isSelected: controller.mode == .lidClosed,
+                    subtitle: statusLine,
+                    subtitleIsActive: !controller.isPaused
+                ) {
+                    Task { await helperSetup.select(.lidClosed) }
+                } controls: {
+                    ValueMenu(
+                        label: "Keep alive duration",
+                        selection: Binding(
+                            get: { preferences.timerEnabled ? preferences.timerSeconds : 0 },
+                            set: { seconds in
+                                if seconds > 0 { preferences.timerSeconds = seconds }
+                                preferences.timerEnabled = seconds > 0
+                            }
+                        ),
+                        choices: [0] + MenuChoices.list(SafetyPreferences.timerChoices, current: preferences.timerSeconds),
+                        title: { $0 == 0 ? String(localized: "Infinite") : DurationFormat.choice($0) }
+                    )
+                }
+                .focused($focusedCard, equals: .lidClosed)
             }
+            .disabled(controller.isBusy || controller.isQuitting)
         }
-        .disabled(controller.isBusy)
     }
 
     private var messages: [WindowMessage] {
@@ -246,7 +219,7 @@ struct ContentView: View {
                 mode: controller.mode,
                 timerSeconds: preferences.timerEnabled ? preferences.timerSeconds : nil
             ),
-            update: updates.notice
+            update: nil
         )
     }
 
@@ -261,7 +234,7 @@ struct ContentView: View {
                 ) {
                     switch message.source {
                     case .update:
-                        NSWorkspace.shared.open(UpdateBuild.downloadPage(for: updates.notice))
+                        break
                     case .autoLogout:
                         openAutoLogoutSettings()
                     case .helper, .mode:
@@ -282,182 +255,32 @@ struct ContentView: View {
         }
     }
 
-    private var blocks: [WindowBlock] {
-        WindowBlock.list(
-            mode: controller.mode,
-            isExpanded: disclosure.isExpanded,
-            showsAppearance: WindowLook.showsStyleSetting(isSystem26OrLater: isSystem26OrLater)
-        )
-    }
-
-    @ViewBuilder
-    private func view(for block: WindowBlock, isCompact: Bool = false) -> some View {
-        switch block {
-        case .timer: timerSection
-        case .settingsToggle: SettingsToggleRow(isExpanded: $disclosure.isExpanded)
-        case .safety: safetySection
-        case .dimmedSafety: dimmedSafetySection
-        case .sleepAndWake: sleepAndWakeSection
-        // Among compact rows the stack has no spacing, so the dividers and the header keep their own gap.
-        case .settingsDivider: Divider().padding(.bottom, isCompact ? 8 : 0)
-        case .generalHeader: SectionHeader(title: "General").padding(.bottom, isCompact ? 4 : 0)
-        case .closingDivider: Divider().padding(.top, isCompact ? 8 : 0)
-        case .lockScreen: lockRow(minHeight: 36)
-        case .launchAtLogin: launchRow
-        case .checkForUpdates: updatesRow
-        case .appearance: appearanceRow
-        case .accent: accentRow
-        case .activityLog: ActivityLogOpenRow(action: openActivityLog)
-        }
-    }
-
-    // Off and Run with Lid Closed.
-    private var safetySection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            SectionHeader(title: "Safety")
-            SettingRow(title: "Stop when the Mac gets hot", detail: "Ends the session under thermal pressure") {
-                thermalToggle
+    private var settingsRows: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SettingRow(title: "Display off when closed", isOn: $preferences.displayOffWhenClosed) {
+                SwitchToggle(title: "Display off when closed", isOn: $preferences.displayOffWhenClosed)
             }
-            SettingRow(
-                title: "Stop on low battery",
-                detail: preferences.batteryLimitApplies
-                    ? "When the charge drops below the limit"
-                    : "Not used with Only while charging"
-            ) {
+            SettingRow(title: "Low power when closed", isOn: $preferences.lowPowerWhenClosed) {
+                SwitchToggle(title: "Low power when closed", isOn: $preferences.lowPowerWhenClosed)
+            }
+            SettingRow(title: "Stop when hot", isOn: $preferences.thermalProtectionEnabled) { thermalToggle }
+            SettingRow(title: "Stop below battery %", isOn: $preferences.batteryLimitEnabled) {
                 batteryValue
                 batteryToggle
             }
             .opacity(preferences.batteryLimitApplies ? 1 : 0.45)
             .disabled(!preferences.batteryLimitApplies)
-            SettingRow(title: "Only while charging", detail: "Pauses on battery, resumes on power") {
-                chargingToggle
-            }
-            timerRow
+            lockRow(minHeight: 24)
+            SettingRow(title: "Only while charging", isOn: $preferences.chargingOnlyEnabled) { chargingToggle }
+            Divider().padding(.vertical, 4)
+            launchRow
+            NavigationRow(title: "Wake-up alarms", action: openWakeAlarms)
+            NavigationRow(title: "Watched apps", action: openWatchedApps)
         }
-    }
-
-    // Keep Screen On: only the timer applies.
-    private var timerSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            SectionHeader(title: "Timer")
-            timerRow
-        }
-    }
-
-    private var dimmedSafetySection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            SectionHeader(title: "Safety · lid closed only")
-            SettingRow(title: "Stop when the Mac gets hot", minHeight: 40) {
-                thermalToggle
-            }
-            SettingRow(title: "Stop on low battery", minHeight: 40) {
-                batteryValue
-                batteryToggle
-            }
-            SettingRow(title: "Only while charging", minHeight: 40) {
-                chargingToggle
-            }
-            lockRow(minHeight: 40)
-        }
-        .opacity(0.45)
-        .disabled(true)
-    }
-
-    // Wake at and Watched apps work in every position; Sleep when idle not in Keep Screen On.
-    private var sleepAndWakeSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            SectionHeader(title: "Sleep and wake")
-            ForEach(SleepAndWakeRow.list(mode: controller.mode), id: \.self) { row in
-                switch row {
-                case .wakeAt:
-                    wakeRow
-                case .sleepWhenIdle(isDimmed: false):
-                    idleRow
-                case .sleepWhenIdle(isDimmed: true):
-                    SettingRow(title: "Sleep when idle", minHeight: 40) {
-                        idleValue
-                        idleToggle
-                    }
-                    .opacity(0.45)
-                    .disabled(true)
-                case .watchedApps:
-                    WatchedAppsOpenRow(
-                        summary: WatchedAppsSummary.text(paths: preferences.watchedAppPaths, name: AppDisplayName.of),
-                        action: openWatchedApps
-                    )
-                }
-            }
-        }
-    }
-
-    private var wakeRow: some View {
-        SettingRow(title: "Wake at", detail: wakeDetail) {
-            WakeTimePill(minuteOfDay: $wakePreferences.wakeMinuteOfDay)
-            SwitchToggle(
-                title: "Wake at",
-                isOn: Binding(get: { wakePreferences.wakeEnabled }, set: setWakeEnabled)
-            )
-        }
-    }
-
-    private var wakeDetail: LocalizedStringKey {
-        switch WakeRow.detail(lastError: wake.lastError) {
-        case .everyDay: return "Every day, on power only"
-        case .couldNotSet: return "Could not set the wake"
-        }
-    }
-
-    private func setWakeEnabled(_ isOn: Bool) {
-        wakePreferences.wakeEnabled = isOn
-        if isOn {
-            Task { await helperSetup.requestWake() }
-        } else {
-            helperSetup.cancelWake()
-        }
-    }
-
-    private var timerRow: some View {
-        SettingRow(title: "Turn off after", detail: "Counts from the moment you switch on") {
-            ValueMenu(
-                label: "Turn off after",
-                selection: $preferences.timerSeconds,
-                choices: MenuChoices.list(SafetyPreferences.timerChoices, current: preferences.timerSeconds),
-                title: DurationFormat.choice
-            )
-            SwitchToggle(title: "Turn off after", isOn: $preferences.timerEnabled)
-        }
-    }
-
-    private var idleRow: some View {
-        let note = idleNote
-        return SettingRow(title: "Sleep when idle", note: note.text, noteDot: note.dot.map(idleDotColor)) {
-            idleValue
-            idleToggle
-        }
-    }
-
-    private func idleDotColor(_ dot: IdleSleepNote.Dot) -> Color {
-        switch dot {
-        case .busy: return accentColor
-        case .counting: return Palette.switchOff
-        }
-    }
-
-    private var idleValue: some View {
-        ValueMenu(
-            label: "Sleep when idle",
-            selection: $preferences.idleSleepMinutes,
-            choices: MenuChoices.list(SafetyPreferences.idleSleepChoices, current: preferences.idleSleepMinutes),
-            title: DurationFormat.minutes
-        )
-    }
-
-    private var idleToggle: some View {
-        SwitchToggle(title: "Sleep when idle", isOn: $preferences.idleSleepEnabled)
     }
 
     private var thermalToggle: some View {
-        SwitchToggle(title: "Stop when the Mac gets hot", isOn: $preferences.thermalProtectionEnabled)
+        SwitchToggle(title: "Stop when hot", isOn: $preferences.thermalProtectionEnabled)
     }
 
     private var batteryValue: some View {
@@ -470,7 +293,7 @@ struct ContentView: View {
     }
 
     private var batteryToggle: some View {
-        SwitchToggle(title: "Stop on low battery", isOn: $preferences.batteryLimitEnabled)
+        SwitchToggle(title: "Stop below battery %", isOn: $preferences.batteryLimitEnabled)
     }
 
     private var chargingToggle: some View {
@@ -479,7 +302,7 @@ struct ContentView: View {
 
     private func lockRow(minHeight: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            SettingRow(title: "Lock screen when the lid closes", minHeight: minHeight) {
+            SettingRow(title: "Lock screen when the lid closes", isOn: $preferences.lockOnLidCloseEnabled, minHeight: minHeight) {
                 SwitchToggle(title: "Lock screen when the lid closes", isOn: $preferences.lockOnLidCloseEnabled)
             }
             if let notice = controller.screenLockNotice {
@@ -492,174 +315,77 @@ struct ContentView: View {
     }
 
     private var launchRow: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            SettingRow(title: "Launch at login", minHeight: 36) {
-                SwitchToggle(
-                    title: "Launch at login",
-                    isOn: Binding(get: { launchAtLogin.isEnabled }, set: { launchAtLogin.setEnabled($0) })
-                )
+        let enabled = Binding(get: { launchAtLogin.isEnabled }, set: { launchAtLogin.setEnabled($0) })
+        return SettingRow(title: "Launch at login", isOn: enabled) {
+            SwitchToggle(title: "Launch at login", isOn: enabled)
                 .disabled(!launchAtLogin.isInApplications)
-            }
-            if let notice = launchAtLogin.notice {
-                Text(notice.text)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
         }
-    }
-
-    private var updatesRow: some View {
-        SettingRow(title: "Check for updates", minHeight: 36) {
-            SwitchToggle(title: "Check for updates", isOn: $updates.isEnabled)
-        }
+        .help(launchAtLogin.notice?.text ?? String(localized: "Launch at login"))
     }
 
     private var look: WindowLook {
-        WindowLook(style: windowStyle.style, isSystem26OrLater: isSystem26OrLater, reduceTransparency: reduceTransparency)
+        WindowLook(style: .glass, isSystem26OrLater: isSystem26OrLater, reduceTransparency: reduceTransparency)
     }
 
-    private var appearanceRow: some View {
-        SettingRow(title: "Appearance", minHeight: 36) {
-            Picker("Appearance", selection: $windowStyle.style) {
-                ForEach(WindowAppearance.allCases, id: \.self) { style in
-                    Text(style.title).tag(style)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-        }
-    }
 
-    private var accentColor: Color {
-        Palette.accent(accent.theme)
-    }
-
-    private var accentRow: some View {
-        SettingRow(title: "Accent", minHeight: 36) {
-            Picker("Accent", selection: $accent.theme) {
-                ForEach(AccentTheme.allCases, id: \.self) { theme in
-                    Text(theme.title).tag(theme)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-        }
-    }
-
-    private var quitRow: some View {
-        Button {
-            NSApplication.shared.terminate(nil)
-        } label: {
-            HStack {
-                Text("Quit LidAwake")
-                    .font(.system(size: 13))
-                Spacer()
-                Text(verbatim: "⌘Q")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-            }
-            .frame(minHeight: 36)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .keyboardShortcut("q", modifiers: .command)
-        .accessibilityLabel(Text("Quit LidAwake"))
-    }
-}
-
-private struct IdlePoll: Equatable {
-    let isActive: Bool
-    let minutes: Int
 }
 
 private extension Mode {
     var title: LocalizedStringKey {
         switch self {
-        case .off: return "Off"
+        case .off: return "Normal"
         case .keepScreenOn: return "Keep Screen On"
-        case .lidClosed: return "Run with Lid Closed"
+        case .lidClosed: return "Keep alive"
         }
     }
 
-    var summary: LocalizedStringKey {
-        switch self {
-        case .off: return "The Mac sleeps as usual."
-        case .keepScreenOn: return "For stepping away from the desk. Closing the lid still puts the Mac to sleep."
-        case .lidClosed: return "For the road. Keeps working with the lid shut or the screen locked."
-        }
-    }
 }
 
-private extension AccentTheme {
-    var title: LocalizedStringKey {
-        switch self {
-        case .blue: return "Blue"
-        case .system: return "System"
-        case .amber: return "Amber"
-        }
-    }
-}
-
-private extension WindowAppearance {
-    var title: LocalizedStringKey {
-        switch self {
-        case .glass: return "Glass"
-        case .solid: return "Solid"
-        }
-    }
-}
-
-private struct ModeCard: View {
+private struct ModeRow<Controls: View>: View {
     let mode: Mode
     let isSelected: Bool
-    let accent: Color
-    let onAccent: Color
-    let look: WindowLook
+    var subtitle: String? = nil
+    var subtitleIsActive = false
     let action: () -> Void
+    @ViewBuilder let controls: Controls
 
     @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
-        Button(action: action) {
-            HStack(spacing: 12) {
-                ModeIconView(mode: mode)
-                    .frame(width: 22, height: 22)
-                    .foregroundStyle(isSelected ? accent : Color.primary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(mode.title)
-                        .font(.system(size: 13, weight: .semibold))
-                    Text(mode.summary)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+        HStack(spacing: 8) {
+            Button(action: action) {
+                HStack(spacing: 10) {
+                    ModeIconView(mode: mode)
+                        .frame(width: 22, height: 22)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(mode.title)
+                            .font(.system(size: 14))
+                        if let subtitle {
+                            Text(subtitle)
+                                .font(.system(size: 11))
+                                .foregroundStyle(subtitleIsActive ? Color.green : .secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    if isSelected {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 12, weight: .semibold))
+                            .accessibilityHidden(true)
+                    }
                 }
-                .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(onAccent)
-                        .frame(width: 18, height: 18)
-                        .background(Circle().fill(accent))
-                        .accessibilityHidden(true)
-                }
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .contentShape(Rectangle())
             }
-            // The border is drawn inside the card, so 13 matches the mockup's 12 padding plus a 1 border.
-            .padding(13)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(shape.fill(Palette.cardBackground(look)))
-            .overlay(shape.strokeBorder(isSelected ? accent : Palette.cardBorder(look), lineWidth: isSelected ? 2 : 1))
-            .contentShape(shape)
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(mode.title))
+            .accessibilityValue(Text(subtitle ?? ""))
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+            controls
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, 4)
+        .modifier(MenuRowHighlight(isSelected: isSelected))
         .opacity(isEnabled ? 1 : 0.6)
-        .accessibilityLabel(Text(mode.title))
-        .accessibilityHint(Text(mode.summary))
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -766,184 +492,92 @@ private struct MessageBanner: View {
     }
 }
 
-private struct SettingsToggleRow: View {
-    @Binding var isExpanded: Bool
+/// Uses macOS selection colors without replacing the native controls inside a row.
+private struct MenuRowHighlight: ViewModifier {
+    var isPressed = false
+    var extendsToMargin = true
+    var isSelected = false
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovered = false
 
-    var body: some View {
-        Button {
-            isExpanded.toggle()
-        } label: {
-            HStack {
-                Text("Settings")
-                    .font(.system(size: 13))
-                Spacer()
-                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 14)
-                    .accessibilityHidden(true)
-            }
-            .frame(minHeight: 36)
+    func body(content: Content) -> some View {
+        let highlighted = isEnabled && (isHovered || isPressed)
+        let background = highlighted ? Color(nsColor: .selectedContentBackgroundColor)
+            : isSelected ? Color.primary.opacity(0.06) : .clear
+        content
+            .padding(.horizontal, 8)
             .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text("Settings"))
-        .accessibilityValue(Text(isExpanded ? "Expanded" : "Collapsed"))
+            .background {
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(background)
+            }
+            .foregroundStyle(highlighted ? Color(nsColor: .selectedMenuItemTextColor) : .primary)
+            .onHover { isHovered = $0 }
+            .padding(.horizontal, extendsToMargin ? -8 : 0)
     }
 }
 
-private struct ActivityLogOpenRow: View {
-    let action: () -> Void
+private struct MenuRowButtonStyle: ButtonStyle {
+    var extendsToMargin = true
+    var isSelected = false
 
-    var body: some View {
-        Button(action: action) {
-            HStack {
-                Text("Activity log")
-                    .font(.system(size: 13))
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 14)
-                    .accessibilityHidden(true)
-            }
-            .frame(minHeight: 36)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text("Activity log"))
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(minHeight: 24)
+            .modifier(MenuRowHighlight(isPressed: configuration.isPressed, extendsToMargin: extendsToMargin, isSelected: isSelected))
     }
 }
 
-private struct WatchedAppsOpenRow: View {
-    let summary: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Watched apps")
-                        .font(.system(size: 13))
-                    Text(verbatim: summary)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 14)
-                    .accessibilityHidden(true)
-            }
-            .frame(minHeight: 44)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text("Watched apps"))
-        .accessibilityValue(Text(verbatim: summary))
-    }
-}
-
-private struct SectionHeader: View {
+private struct NavigationRow: View {
     let title: LocalizedStringKey
+    let action: () -> Void
 
     var body: some View {
-        Text(title)
-            .font(.system(size: 11, weight: .semibold))
-            .kerning(0.6)
-            .textCase(.uppercase)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-            .accessibilityAddTraits(.isHeader)
+        Button(action: action) {
+            HStack {
+                Text(title)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .opacity(0.65)
+            }
+            .font(.system(size: 13))
+            .frame(minHeight: 24)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(MenuRowButtonStyle())
     }
 }
 
 private struct SettingRow<Controls: View>: View {
     let title: LocalizedStringKey
-    var detail: LocalizedStringKey?
-    /// Text from the app rather than a fixed string, with an optional dot before it.
-    var note: String?
-    var noteDot: Color?
-    var minHeight: CGFloat = 44
+    @Binding var isOn: Bool
+    var minHeight: CGFloat = 24
     @ViewBuilder let controls: Controls
 
     var body: some View {
-        SettingRowLayout(minHeight: minHeight) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 13))
-                if let detail {
-                    Text(detail)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+        HStack(spacing: 0) {
+            Button {
+                isOn.toggle()
+            } label: {
+                HStack(spacing: 0) {
+                    Text(title)
+                        .font(.system(size: 13))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
                 }
-                if let note {
-                    HStack(alignment: .firstTextBaseline, spacing: 5) {
-                        if let noteDot {
-                            Circle()
-                                .fill(noteDot)
-                                .frame(width: 6, height: 6)
-                                // Centered on the lowercase letters rather than sitting on the baseline.
-                                .alignmentGuide(.firstTextBaseline) { $0.height / 2 + 3 }
-                                .accessibilityHidden(true)
-                        }
-                        Text(note)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                            .truncationMode(.tail)
-                    }
-                }
+                .frame(maxWidth: .infinity, minHeight: minHeight)
+                .contentShape(Rectangle())
             }
-            .accessibilityElement(children: .combine)
-            HStack(spacing: 8) {
-                controls
-            }
-            .fixedSize()
+            .buttonStyle(.plain)
+            HStack(spacing: 8) { controls }
         }
+        .frame(minHeight: minHeight)
+        .modifier(MenuRowHighlight())
     }
 }
 
-/// Lays out a setting row: the controls at their own size on the right, the text in all the
-/// width left of them. Sizing and placing use the same widths, so the row is always as tall
-/// as the wrapped text, and the text wraps only where it meets the controls.
-private struct SettingRowLayout: Layout {
-    var minHeight: CGFloat
-    var spacing: CGFloat = 12
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let measured = measure(width: proposal.width, subviews: subviews)
-        return CGSize(width: measured.width, height: measured.height)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let measured = measure(width: bounds.width, subviews: subviews)
-        subviews[0].place(
-            at: CGPoint(x: bounds.minX, y: bounds.midY),
-            anchor: .leading,
-            proposal: ProposedViewSize(width: measured.textWidth, height: measured.textHeight)
-        )
-        subviews[1].place(
-            at: CGPoint(x: bounds.maxX, y: bounds.midY),
-            anchor: .trailing,
-            proposal: ProposedViewSize(measured.controls)
-        )
-    }
-
-    private func measure(width: CGFloat?, subviews: Subviews) -> (width: CGFloat, height: CGFloat, textWidth: CGFloat, textHeight: CGFloat, controls: CGSize) {
-        let controls = subviews[1].sizeThatFits(.unspecified)
-        let rowWidth = width ?? (subviews[0].sizeThatFits(.unspecified).width + spacing + controls.width)
-        let textWidth = max(0, rowWidth - spacing - controls.width)
-        let textHeight = subviews[0].sizeThatFits(ProposedViewSize(width: textWidth, height: nil)).height
-        let height = max(minHeight, textHeight, controls.height)
-        return (rowWidth, height, textWidth, textHeight, controls)
-    }
-}
-
-private struct SwitchToggle: View {
+struct SwitchToggle: View {
     let title: LocalizedStringKey
     @Binding var isOn: Bool
 
@@ -956,7 +590,7 @@ private struct SwitchToggle: View {
 }
 
 /// A value in a rounded "pill" that opens a menu of choices.
-private struct ValueMenu: View {
+struct ValueMenu: View {
     let label: LocalizedStringKey
     @Binding var selection: Int
     let choices: [Int]
@@ -980,7 +614,7 @@ private struct ValueMenu: View {
         // A borderless menu draws its title in the tint color.
         .tint(.primary)
         .fixedSize()
-        .padding(.vertical, 4)
+        .padding(.vertical, 2)
         .padding(.horizontal, 8)
         .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Palette.valueBackground))
         .accessibilityLabel(Text(label))
@@ -988,53 +622,6 @@ private struct ValueMenu: View {
     }
 }
 
-/// The wake time in a pill that opens the system picker for hours and minutes.
-private struct WakeTimePill: View {
-    @Binding var minuteOfDay: Int
-    @State private var isPicking = false
-
-    var body: some View {
-        let time = WakeRow.time(minuteOfDay: minuteOfDay)
-        Button {
-            isPicking = true
-        } label: {
-            Text(verbatim: time)
-                .font(.system(size: 12))
-                .padding(.vertical, 4)
-                .padding(.horizontal, 8)
-                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Palette.valueBackground))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .fixedSize()
-        .popover(isPresented: $isPicking, arrowEdge: .bottom) {
-            WakeTimePicker(minuteOfDay: $minuteOfDay)
-        }
-        .accessibilityLabel(Text("Wake at"))
-        .accessibilityValue(Text(verbatim: time))
-    }
-}
-
-/// The content of the wake time popover; every change is saved at once.
-struct WakeTimePicker: View {
-    @Binding var minuteOfDay: Int
-
-    var body: some View {
-        DatePicker(
-            "Wake at",
-            selection: Binding(
-                get: { WakeRow.date(minuteOfDay: minuteOfDay) },
-                set: { minuteOfDay = WakeRow.minuteOfDay(of: $0) }
-            ),
-            displayedComponents: .hourAndMinute
-        )
-        .datePickerStyle(.stepperField)
-        .labelsHidden()
-        .padding(12)
-    }
-}
-
-/// Reports the height of the view it is the background of.
 private struct HeightReader: View {
     @Binding var height: CGFloat
 

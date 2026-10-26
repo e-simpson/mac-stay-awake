@@ -16,6 +16,20 @@ enum MenuBarWindow {
         }
     }
 
+    static func isStatusClick(_ event: NSEvent) -> Bool {
+        guard let button = statusButton(), event.window === button.window else { return false }
+        return button.bounds.contains(button.convert(event.locationInWindow, from: nil))
+    }
+
+    static func show() {
+        guard let button = statusButton() else { return }
+        // Clicking again would hide an already-open panel.
+        let panelIsVisible = NSApp.windows.contains {
+            $0.isVisible && $0 !== button.window && $0.className.contains("MenuBarExtra")
+        }
+        if !panelIsVisible { button.performClick(nil) }
+    }
+
     /// The app has one menu bar icon.
     private static func statusButton() -> NSStatusBarButton? {
         for window in NSApp.windows {

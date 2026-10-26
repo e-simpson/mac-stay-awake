@@ -59,13 +59,13 @@ private final class FakeConnection: HelperConnecting {
 
 private final class FakeWakes: ScheduledWakeService {
     var setError: Error?
-    private(set) var minutes: [Int] = []
+    private(set) var minutes: [[Int]] = []
     /// The service calls made before the wakes were cancelled.
     private(set) var serviceCallsAtSet: [[String]] = []
     var service: FakeService?
 
-    func setScheduledWake(minuteOfDay: Int) async throws {
-        minutes.append(minuteOfDay)
+    func setScheduledWakes(minutesOfDay: [Int]) async throws {
+        minutes.append(minutesOfDay)
         serviceCallsAtSet.append(service?.calls ?? [])
         if let setError { throw setError }
     }
@@ -202,7 +202,7 @@ final class HelperClientTests: XCTestCase {
         wakes.service = service
         let sut = client(service, FakeConnection(1))
         await sut.uninstall(cancelingWakesWith: wakes)
-        XCTAssertEqual(wakes.minutes, [-1])
+        XCTAssertEqual(wakes.minutes, [[]])
         XCTAssertEqual(wakes.serviceCallsAtSet, [[]], "the wakes go first")
         XCTAssertEqual(service.calls, ["unregister"])
         XCTAssertEqual(sut.state, .notInstalled)
@@ -214,7 +214,7 @@ final class HelperClientTests: XCTestCase {
         wakes.setError = HelperError.timeout
         let sut = client(service, FakeConnection(1))
         await sut.uninstall(cancelingWakesWith: wakes)
-        XCTAssertEqual(wakes.minutes, [-1])
+        XCTAssertEqual(wakes.minutes, [[]])
         XCTAssertEqual(service.calls, ["unregister"])
         XCTAssertEqual(sut.state, .notInstalled)
     }
@@ -235,10 +235,10 @@ final class HelperClientTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let preferences = WakePreferences(defaults: defaults)
-        preferences.wakeEnabled = true
+        XCTAssertTrue(preferences.save(WakeAlarm(minuteOfDay: 480, isEnabled: true)))
         let sut = client(FakeService(.enabled), FakeConnection(1))
         await sut.uninstall(cancelingWakesWith: FakeWakes())
-        XCTAssertTrue(WakePreferences(defaults: defaults).wakeEnabled)
+        XCTAssertTrue(WakePreferences(defaults: defaults).hasEnabledAlarms)
     }
 
     func testOpenSystemSettings() {

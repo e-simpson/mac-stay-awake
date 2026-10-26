@@ -44,7 +44,7 @@ enum ModeIcon {
             return true
         }
         image.isTemplate = true
-        image.accessibilityDescription = "LidAwake"
+        image.accessibilityDescription = "MacStayAwake"
         return image
     }
 
@@ -106,6 +106,7 @@ struct MenuBarIcon: View {
 
     var body: some View {
         Image(nsImage: ModeIcon.menuBarImage(for: controller.mode))
-            .accessibilityLabel(Text(verbatim: "LidAwake"))
+            .accessibilityLabel(Text(verbatim: "MacStayAwake"))
+            .help("Right-click to enable Keep alive")
     }
 }

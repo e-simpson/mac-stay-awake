@@ -18,6 +18,8 @@ public struct SafetySettings: Equatable {
     public let idleSleepMinutes: Int
     /// Apps whose started programs count as work for the idle count; empty turns this off.
     public let watchedAppPaths: [String]
+    /// Applies Low Power only while the enabled session holds a closed-lid Mac awake.
+    public let lowPowerWhenClosed: Bool
 
     public init(
         timerSeconds: Int,
@@ -25,7 +27,8 @@ public struct SafetySettings: Equatable {
         thermalProtection: Bool,
         chargingOnly: Bool = false,
         idleSleepMinutes: Int = 0,
-        watchedAppPaths: [String] = []
+        watchedAppPaths: [String] = [],
+        lowPowerWhenClosed: Bool = true
     ) {
         self.timerSeconds = timerSeconds
         self.batteryLimitPercent = batteryLimitPercent
@@ -33,6 +36,7 @@ public struct SafetySettings: Equatable {
         self.chargingOnly = chargingOnly
         self.idleSleepMinutes = idleSleepMinutes
         self.watchedAppPaths = watchedAppPaths
+        self.lowPowerWhenClosed = lowPowerWhenClosed
     }
 
     public var isValid: Bool {
@@ -50,6 +54,7 @@ public enum StopReason: String, Codable, Equatable {
     case thermal
     case thermalUnreadable
     case powerUnreadable
+    case powerModeFailed
     case leaseExpired
     case idle
 }

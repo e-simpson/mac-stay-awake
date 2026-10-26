@@ -5,3 +5,10 @@ DerivedData/
 .swiftpm/
 xcuserdata/
 *.xcuserstate
+.env
+.env.*
+!.env.example
+*.p12
+*.pfx
+*.p8
+*.key

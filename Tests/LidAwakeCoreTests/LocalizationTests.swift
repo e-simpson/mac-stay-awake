@@ -93,7 +93,7 @@ final class LocalizationTests: XCTestCase {
         let glossary: [(String, String, String)] = [
             ("Off", "Aus", "Выкл."),
             ("Keep Screen On", "Bildschirm anlassen", "Не гасить экран"),
-            ("Run with Lid Closed", "Mit geschlossenem Deckel", "С закрытой крышкой"),
+            ("Keep alive", "Mit geschlossenem Deckel", "С закрытой крышкой"),
             ("Safety", "Schutz", "Защита"),
             ("Timer", "Timer", "Таймер"),
             ("Safety · lid closed only", "Schutz · nur bei geschlossenem Deckel", "Защита · только с закрытой крышкой"),
@@ -115,13 +115,13 @@ final class LocalizationTests: XCTestCase {
             ("System", "System", "Система"),
             ("Amber", "Bernstein", "Amber"),
             ("Settings", "Einstellungen", "Настройки"),
-            ("Quit LidAwake", "LidAwake beenden", "Завершить LidAwake"),
+            ("Quit MacStayAwake", "MacStayAwake beenden", "Завершить MacStayAwake"),
             ("Permission needed", "Erlaubnis erforderlich", "Нужно разрешение"),
             ("Open System Settings", "Systemeinstellungen öffnen", "Открыть «Системные настройки»"),
             ("Try Again", "Erneut versuchen", "Повторить"),
             ("Dismiss", "Ausblenden", "Скрыть"),
-            ("LidAwake turned off", "LidAwake wurde ausgeschaltet", "LidAwake выключился"),
-            ("LidAwake paused", "LidAwake pausiert", "LidAwake на паузе"),
+            ("MacStayAwake turned off", "MacStayAwake wurde ausgeschaltet", "MacStayAwake выключился"),
+            ("MacStayAwake paused", "MacStayAwake pausiert", "MacStayAwake на паузе"),
             ("30 min", "30\u{00A0}Min.", "30\u{00A0}мин"),
             ("1 hour", "1\u{00A0}Stunde", "1\u{00A0}час"),
             ("2 hours", "2\u{00A0}Stunden", "2\u{00A0}часа"),
@@ -204,12 +204,12 @@ final class LocalizationTests: XCTestCase {
             ],
             "Clear": ["de": "Löschen", "ru": "Очистить", "zh-Hans": "清除"],
             "No events yet": ["de": "Noch keine Ereignisse", "ru": "Событий пока нет", "zh-Hans": "暂无记录"],
-            "Run with Lid Closed turned on": [
+            "Keep alive turned on": [
                 "de": "„Mit geschlossenem Deckel“ eingeschaltet",
                 "ru": "Режим «С закрытой крышкой» включён",
                 "zh-Hans": "已开启“合盖运行”",
             ],
-            "Run with Lid Closed turned off": [
+            "Keep alive turned off": [
                 "de": "„Mit geschlossenem Deckel“ ausgeschaltet",
                 "ru": "Режим «С закрытой крышкой» выключен",
                 "zh-Hans": "已关闭“合盖运行”",
@@ -248,10 +248,10 @@ final class LocalizationTests: XCTestCase {
                 "ru": "Работы не видно, отсчёт %lld\u{00A0}мин",
                 "zh-Hans": "未检测到任务，开始计时 %lld 分钟",
             ],
-            "LidAwake was restarted.": [
-                "de": "LidAwake wurde neu gestartet.",
-                "ru": "LidAwake перезапустился.",
-                "zh-Hans": "LidAwake 已重新启动。",
+            "MacStayAwake was restarted.": [
+                "de": "MacStayAwake wurde neu gestartet.",
+                "ru": "MacStayAwake перезапустился.",
+                "zh-Hans": "MacStayAwake 已重新启动。",
             ],
         ]
         XCTAssertEqual(expected.count, 24)
