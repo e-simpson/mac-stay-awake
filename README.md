@@ -9,7 +9,39 @@
   <img src="https://img.shields.io/badge/status-experimental-yellow" alt="Status: experimental" />
 </p>
 
-A native menu-bar app for closed-lid work on battery or external power. Based on [Vladimir Podgornyi's LidAwake](https://github.com/Vladimir-Podgornyi/LidAwake), with optional brightness and Low Power Mode handling, timers, daily wake alarms, and idle detection.
+A native menu-bar app for closed-lid work on battery or external power, inspired by [Vladimir Podgornyi's LidAwake](https://github.com/Vladimir-Podgornyi/LidAwake) and [deezeddd's LidAwake-Mac](https://github.com/deezeddd/LidAwake-Mac). It builds on the former's app/helper foundation and the latter's brightness-preservation approach.
+
+## Screenshots
+
+<p align="center">
+  <img src="./images/normal-light.png" width="320" alt="Normal mode with compact settings and a duration picker" />
+  <img src="./images/keep-alive-dark.png" width="320" alt="Keep alive with countdown, charging status, and nominal thermals" />
+</p>
+
+Screenshots use inert snapshot services and example state.
+
+## Features
+
+- **Keep alive**
+  - Work with the lid closed on battery or external power; charging-only operation is optional.
+  - Select **Normal** to restore temporary changes and return control to macOS. Right-click the menu-bar icon to toggle modes.
+  - The panel follows system appearance/accent, with version information, Log, and Quit in its footer.
+- **Display and energy settings**
+  - Optionally save built-in brightness, set it to zero while closed, and enable Low Power Mode. Opening the lid or ending a session restores captured values.
+  - Brightness zero does not guarantee the panel is physically powered off. Private DisplayServices APIs may change, unavailable panels defer restoration, and Low Power Mode can reduce performance.
+- **Timers and safety**
+  - Choose durations from two minutes to 24 hours, or **Infinite**. Defaults are two hours, a 20% battery cutoff, and thermal-pressure protection enabled.
+  - The subtitle shows only enabled timer, battery/charging, and thermal fields. Other enabled safety limits still apply with Infinite selected.
+  - Thermal protection does not guarantee safe operation in an enclosed bag. Legacy energy settings are refused when their original state cannot be restored safely.
+- **Automation**
+  - **App watching:** enable **Sleep when idle** and select apps whose launched commands should count as work. Enough consecutive quiet minutes ends Keep alive and restores its settings; macOS then controls sleep normally.
+  - Watching estimates CPU activity and also considers system load, input, and other apps' keep-awake requests. It does not read Codex thread state, and model-response waits may appear idle. It does not start or restart Keep alive automatically; selected apps have no effect while Sleep when idle is disabled.
+  - **Daily wake alarms:** add, edit, disable, or delete up to 16 distinct times. New alarms start disabled. Alarms intentionally survive Quit: the next two queued occurrences per enabled alarm remain while the app is closed; running the app replenishes them.
+  - Lock-on-close and launch at login are opt-in. Upstream binary update checks are disabled.
+- **Recovery and limits**
+  - Quit restores temporary settings before exiting and retries automatically if a display or service is unavailable. Force Quit, shutdown deadlines, or power loss can interrupt recovery; restarting the app is required for interrupted brightness recovery.
+  - Observable external setting changes are preserved. Avoid competing sleep-override utilities.
+  - The app owns brightness recovery; an authenticated root helper owns bounded power operations, safety limits, and durable recovery records. Sessions require renewal and have a two-minute lease. See [the architecture](./docs/architecture/POWER_SESSIONS.md).
 
 ## Build and use
 
@@ -36,15 +68,6 @@ open build/preview/MacStayAwake.app
 
 The preview uses inert power/brightness services and cannot register the helper. It cannot test closed-lid behavior. Avoid running a preview alongside an installed copy.
 
-## Interface
-
-<p align="center">
-  <img src="./images/normal-light.png" width="320" alt="Normal mode with compact settings and a duration picker" />
-  <img src="./images/keep-alive-dark.png" width="320" alt="Keep alive with countdown, charging status, and nominal thermals" />
-</p>
-
-Screenshots use inert snapshot services and example state.
-
 ## Requirements
 
 - The full Xcode application, including command-line tools and the asset compiler. Development checks used Xcode 27.1; older toolchains remain unverified.
@@ -52,32 +75,6 @@ Screenshots use inert snapshot services and example state.
 - Your own Developer ID Application signing identity for real power control. Developer membership alone does not install that identity.
 
 Apple silicon is the default. `ARCH=x86_64 scripts/build-app.sh` produces a separate app in `build/x86_64/` for manual installation. Intel compilation and physical acceptance remain unverified.
-
-## What it does
-
-- Keeps working with the lid closed on battery or external power; charging-only operation is optional.
-- Optionally saves built-in brightness, sets it to zero while closed, and enables Low Power Mode. Opening or ending a session restores captured values.
-- Offers a timer, battery cutoff, and thermal-pressure protection. Defaults are two hours, 20% battery, and thermal protection enabled.
-- Manages up to 16 distinct daily wake alarms. Each can be edited, disabled, or deleted; new alarms start disabled.
-- Offers Sleep when idle with watched apps. The panel follows system appearance/accent; screen locking and launch at login are opt-in.
-
-The active subtitle shows only enabled timer, battery/charging, and thermal fields.
-
-## App watching
-
-Select apps inside **Watched apps** and enable **Sleep when idle**. During Keep alive, enough consecutive quiet minutes ends the session and restores temporary settings; macOS then controls sleep normally.
-
-The watcher estimates CPU activity in commands launched by selected apps. It also considers system load, keyboard/mouse input, and other apps' keep-awake requests. It does not read Codex thread state: a model-response wait can appear idle. It does not automatically start or restart Keep alive. Without Sleep when idle enabled, selecting apps does not gate the session.
-
-## Recovery and limits
-
-The user app owns brightness recovery. An authenticated root helper owns bounded power operations, safety limits, and durable recovery records. Sessions require renewal and have a two-minute lease. See [the architecture](./docs/architecture/POWER_SESSIONS.md).
-
-**Quit** restores temporary settings before exiting. Unavailable services or displays keep Quit pending while recovery retries automatically. Force Quit, shutdown deadlines, and power loss can interrupt recovery; restarting the app is required for interrupted brightness recovery.
-
-Brightness zero does not guarantee the panel is physically powered off. Brightness uses private DisplayServices APIs. Unavailable displays defer restoration. Thermal protection does not guarantee safe operation in an enclosed bag. Low Power Mode can reduce performance, and legacy energy settings are refused when their original state cannot be restored safely.
-
-Observable external changes are preserved. Avoid competing sleep-override utilities. Wake alarms intentionally survive Quit: only the next two queued occurrences per enabled alarm remain while the app is closed. Running the app replenishes them. Upstream binary update checks are disabled.
 
 ## Verify and contribute
 

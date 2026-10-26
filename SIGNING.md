@@ -34,7 +34,27 @@ The ad-hoc preview is packaged under `build/preview/` with a separate cache. It 
 
 ## Public binary releases
 
-Signing and notarization are separate. These scripts do not submit software to Apple or produce notarized downloads. Before distributing binaries, verify physical recovery and supported systems, sign with the release identity, notarize the distribution, and validate it on a clean Mac. No release credentials belong in source or untrusted pull-request workflows.
+Signing and notarization are separate. The build script does not submit software to Apple. Before distributing binaries, verify physical recovery and supported systems, then notarize a signed build and validate it on a clean Mac. No release credentials belong in source or untrusted pull-request workflows.
+
+Store notarization credentials interactively in your local Keychain:
+
+```sh
+xcrun notarytool store-credentials "MacStayAwake-release" \
+  --apple-id "YOUR_APPLE_ID_EMAIL" \
+  --team-id "YOUR_TEAM_ID"
+```
+
+Replace the placeholders with your Apple Developer login and ten-character Team ID. Enter an app-specific password from account.apple.com at the secure prompt; do not use your regular account password. This method does not require an App Store Connect API key. API-key authentication is also supported by notarytool if you already use it. Do not paste credentials into source, chat, shell history, or CI pull-request jobs.
+
+After building a production app with your configured signing team, explicitly submit it:
+
+```sh
+scripts/notarize-app.sh build/MacStayAwake.app YOUR_TEAM_ID MacStayAwake-release
+```
+
+Replace `YOUR_TEAM_ID` with your actual ten-character Team ID. This command uploads the signed app to Apple. It stages a copy, saves the submission ID and notarization log, requires Accepted status, staples the app, and repacks a ZIP with a SHA-256 checksum under `build/releases/`. It leaves the input and installed apps unchanged and never creates or publishes a GitHub release. If waiting times out, resume the recorded submission instead of blindly rerunning; the script refuses an existing output directory.
+
+Review the log before publishing only the final ZIP and `SHA256SUMS`. The submission archive and local receipts are not release downloads. Keep the release version tied to the reviewed source revision and record which signing configuration was used.
 
 The scripts do not install certificates, modify Keychains, remove quarantine, approve a helper, or change power settings. Upstream binary update checks remain disabled.
 

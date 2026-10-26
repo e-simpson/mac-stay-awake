@@ -126,6 +126,8 @@ struct ContentView: View {
                 messageBlock.padding(.bottom, 8)
             }
             settingsRows
+            Divider().padding(.vertical, 4)
+            footer
         }
         .padding(.horizontal, 14)
         .padding(.bottom, 4)
@@ -148,9 +150,16 @@ struct ContentView: View {
     }
 
     private var header: some View {
+        Text(verbatim: "MacStayAwake")
+            .font(.system(size: 13, weight: .semibold))
+            .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
+    }
+
+    private var footer: some View {
         HStack(spacing: 4) {
-            Text(verbatim: "MacStayAwake")
-                .font(.system(size: 13, weight: .semibold))
+            Text("Version \(AppVersion.installedText)")
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
                 .fixedSize()
             Spacer(minLength: 0)
             Button("Log", action: openActivityLog)
