@@ -18,7 +18,7 @@ extension HelperClient: HelperInstalling {}
 public final class HelperSetup: ObservableObject {
     /// What the window asks of the user; nil until Stay Awake is chosen and while nothing is needed.
     @Published public private(set) var prompt: HelperPrompt?
-    /// True while Stay Awake waits for the helper and will start on its own.
+    /// True while requested Stay Awake preparation or activation is pending.
     @Published public private(set) var isWaiting = false
     /// True when the prompt comes from turning Wake at on rather than from choosing the mode.
     public var isPromptForWake: Bool { goal == .wake }
@@ -61,7 +61,7 @@ public final class HelperSetup: ObservableObject {
         self.now = now
     }
 
-    /// The choice of a mode card.
+    /// Requests a mode, preparing the helper when needed.
     public func select(_ mode: Mode) async {
         dismissModeMessage()
         guard mode == .lidClosed else {
@@ -169,10 +169,11 @@ public final class HelperSetup: ObservableObject {
 
     private func start() async {
         prompt = nil
-        isWaiting = false
         pollTask = nil
         if goal == .lidClosed {
+            let current = attempt
             try? await selectMode(.lidClosed)
+            if current == attempt { isWaiting = false }
         }
         if wakeIsPending {
             wakeIsPending = false

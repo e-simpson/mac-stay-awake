@@ -103,6 +103,53 @@ final class HelperSetupTests: XCTestCase {
         XCTAssertFalse(setup.isWaiting)
     }
 
+    func testWaitingStaysOnUntilActivationFinishesOrFails() async {
+        for needsApproval in [false, true] {
+            for fails in [false, true] {
+                let helper = FakeInstaller(needsApproval ? .requiresApproval : .ready)
+                var resume: CheckedContinuation<Void, Never>?
+                var completed = false
+                var activated = false
+                let setup = HelperSetup(helper: helper, selectMode: { _ in
+                    defer { completed = true }
+                    await withCheckedContinuation { resume = $0 }
+                    if fails { throw HelperError.timeout }
+                    activated = true
+                }, pollSleep: { await Task.yield() })
+                let request = Task { await setup.select(.lidClosed) }
+                if needsApproval {
+                    await settle { setup.prompt == .approval }
+                    helper.state = .ready
+                }
+                await settle { resume != nil }
+                XCTAssertNotNil(resume)
+                XCTAssertTrue(setup.isWaiting, "The switch must stay on during activation")
+                XCTAssertFalse(activated)
+                resume?.resume()
+                await request.value
+                await settle { completed && !setup.isWaiting }
+                XCTAssertTrue(completed)
+                XCTAssertFalse(setup.isWaiting)
+                XCTAssertEqual(activated, !fails)
+            }
+        }
+    }
+
+    func testCancelClearsWaitingDuringSuspendedActivation() async {
+        let helper = FakeInstaller(.ready)
+        var resume: CheckedContinuation<Void, Never>?
+        let setup = HelperSetup(helper: helper, selectMode: { mode in
+            if mode == .lidClosed { await withCheckedContinuation { resume = $0 } }
+        })
+        let request = Task { await setup.select(.lidClosed) }
+        await settle { resume != nil }
+        await setup.select(.off)
+        XCTAssertFalse(setup.isWaiting)
+        resume?.resume()
+        await request.value
+        XCTAssertFalse(setup.isWaiting)
+    }
+
     func testMissingHelperIsRegisteredAndModeStarts() async {
         let helper = FakeInstaller(.notInstalled)
         let setup = makeSetup(helper)
