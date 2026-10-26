@@ -1,29 +1,29 @@
 {
-  "fill" : {
-    "solid" : "srgb:0.05882,0.10588,0.20000,1.00000"
+  "fill": {
+    "solid": "srgb:0.12941,0.09020,0.21961,1.00000"
   },
-  "groups" : [
+  "groups": [
     {
-      "layers" : [
+      "layers": [
         {
-          "glass" : false,
-          "image-name" : "Logo.svg",
-          "name" : "Logo"
+          "glass": false,
+          "image-name": "Logo.svg",
+          "name": "Logo"
         }
       ],
-      "shadow" : {
-        "kind" : "none",
-        "opacity" : 0
+      "shadow": {
+        "kind": "none",
+        "opacity": 0
       },
-      "specular" : false,
-      "translucency" : {
-        "enabled" : false,
-        "value" : 0
+      "specular": false,
+      "translucency": {
+        "enabled": false,
+        "value": 0
       }
     }
   ],
-  "supported-platforms" : {
-    "squares" : [
+  "supported-platforms": {
+    "squares": [
       "macOS"
     ]
   }

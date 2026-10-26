@@ -38,6 +38,15 @@ public struct NoIdleEvents: IdleEventFetching {
     public func takeIdleEvents() async throws -> [IdleEvent] { [] }
 }
 
+public protocol SettingEventFetching {
+    func takeSettingEvents() async throws -> [SettingEvent]
+}
+
+public struct NoSettingEvents: SettingEventFetching {
+    public init() {}
+    public func takeSettingEvents() async throws -> [SettingEvent] { [] }
+}
+
 public protocol LidSessionService {
     func startSession(leaseSeconds: Int, safety: SafetySettings) async throws
     func renewSession(leaseSeconds: Int, safety: SafetySettings) async throws
@@ -118,7 +127,7 @@ public struct DaemonHelperService: HelperService {
     }
 }
 
-public struct XPCHelperConnection: HelperConnecting, LidSessionService, IdleStatusReading, IdleEventFetching {
+public struct XPCHelperConnection: HelperConnecting, LidSessionService, IdleStatusReading, IdleEventFetching, SettingEventFetching {
     private let timeout: TimeInterval
     private let sessionTimeout: TimeInterval
 
@@ -256,6 +265,19 @@ public struct XPCHelperConnection: HelperConnecting, LidSessionService, IdleStat
         try await call(timeout: timeout) { helper, done in
             helper.takeIdleEvents { code, message, events in
                 done(Self.result(code, message).map { IdleEventWire.decode(events ?? "") })
+            }
+        }
+    }
+
+    public func takeSettingEvents() async throws -> [SettingEvent] {
+        try await call(timeout: timeout) { helper, done in
+            helper.takeSettingEvents { code, message, text in
+                done(Self.result(code, message).flatMap {
+                    guard let text, let events = SettingEventWire.decode(text) else {
+                        return .failure(HelperError.connection(String(localized: "Unexpected helper reply.")))
+                    }
+                    return .success(events)
+                })
             }
         }
     }

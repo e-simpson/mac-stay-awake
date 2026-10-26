@@ -17,7 +17,7 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
     }
     /// Monotonic time the current mode started; the timer counts from here.
     @Published public private(set) var modeStartedAt: TimeInterval?
-    /// True while the helper holds Keep alive paused on battery power.
+    /// True while the helper holds Stay Awake paused on battery power.
     @Published public private(set) var isPaused = false
 
     @Published public private(set) var isQuitting = false
@@ -35,6 +35,7 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
     private let screenLocker: ScreenLocking
     private let activityLog: ActivityLogging
     private let idleEvents: IdleEventFetching
+    private let settingEvents: SettingEventFetching
     private let brightness: DisplayBrightnessControlling
     private var helperRecoveryNeeded: Bool {
         get { preferences.helperRecoveryPending }
@@ -46,6 +47,8 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
     private let now: () -> TimeInterval
     private var renewalTask: Task<Void, Never>?
     private var timerTask: Task<Void, Never>?
+    private var settingEventTask: Task<Void, Never>?
+    private var settingEventRefreshNeeded = false
     private var preferenceChanges: AnyCancellable?
     private var requestedAuthorization = false
     private var stopRequested = false
@@ -64,6 +67,7 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
         screenLocker: ScreenLocking = LoginScreenLocker(),
         activityLog: ActivityLogging = NoActivityLog(),
         idleEvents: IdleEventFetching = NoIdleEvents(),
+        settingEvents: SettingEventFetching = NoSettingEvents(),
         brightness: DisplayBrightnessControlling,
         leaseSeconds: Int = 120,
         renewalSleep: @escaping () async throws -> Void = { try await Task.sleep(nanoseconds: 30_000_000_000) },
@@ -82,6 +86,7 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
         self.screenLocker = screenLocker
         self.activityLog = activityLog
         self.idleEvents = idleEvents
+        self.settingEvents = settingEvents
         self.brightness = brightness
         self.leaseSeconds = leaseSeconds
         self.renewalSleep = renewalSleep
@@ -153,7 +158,7 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
         try await select(newMode, bySchedule: false)
     }
 
-    /// Keep alive with Sleep when idle for this session, only from Off and only on power.
+    /// Stay Awake with Sleep when idle for this session, only from Off and only on power.
     /// Called after the Mac woke on schedule.
     public func turnOnBySchedule() async {
         guard mode == .off, !isBusy else { return }
@@ -236,6 +241,7 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
                     }
                     guard !stopRequested else { throw CancellationError() }
                     try syncBrightness(active: true)
+                    queueSettingEventRefresh()
                 } catch {
                     do {
                         try await endHelperSession()
@@ -290,7 +296,13 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
                 endedSession = true
             } else {
                 helperRecoveryNeeded = true
-                try await sessions.clearLeftover()
+                do {
+                    try await sessions.clearLeftover()
+                } catch {
+                    queueSettingEventRefresh()
+                    throw error
+                }
+                queueSettingEventRefresh()
                 helperRecoveryNeeded = false
             }
         } catch {
@@ -321,6 +333,7 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
             } catch {
                 if !(await acceptOptionalPowerRecovery(error, safety: safety)) { throw error }
             }
+            queueSettingEventRefresh()
             await recordIdleEvents()
             await updatePauseState()
             if stopRequested {
@@ -387,7 +400,7 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
         }
     }
 
-    // Keep alive keeps the Mac awake, so the usual lock on sleep never happens.
+    // Stay Awake keeps the Mac awake, so the usual lock on sleep never happens.
     private func lidChanged(closed: Bool) {
         if closed, mode == .lidClosed, preferences.lockOnLidCloseEnabled, screenLocker.isAvailable {
             screenLocker.lock()
@@ -480,6 +493,29 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
         }
     }
 
+    /// Log opening may wait for delivery; required recovery and mode transitions never do.
+    public func refreshSettingEvents() async {
+        await queueSettingEventRefresh().value
+    }
+
+    /// Coalesce requests, including one final drain for changes made during an in-flight fetch.
+    @discardableResult
+    private func queueSettingEventRefresh() -> Task<Void, Never> {
+        settingEventRefreshNeeded = true
+        if let settingEventTask { return settingEventTask }
+        let task = Task { [weak self] in
+            guard let self else { return }
+            defer { settingEventTask = nil }
+            while settingEventRefreshNeeded {
+                settingEventRefreshNeeded = false
+                guard let events = try? await settingEvents.takeSettingEvents() else { continue }
+                for event in events { activityLog.record(.setting(event), at: event.time) }
+            }
+        }
+        settingEventTask = task
+        return task
+    }
+
     private func requestNotificationAuthorization() {
         guard !requestedAuthorization else { return }
         requestedAuthorization = true
@@ -538,7 +574,13 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
 
     private func endHelperSession() async throws {
         helperRecoveryNeeded = true
-        try await sessions.endSession()
+        do {
+            try await sessions.endSession()
+        } catch {
+            queueSettingEventRefresh()
+            throw error
+        }
+        queueSettingEventRefresh()
         helperRecoveryNeeded = false
     }
 

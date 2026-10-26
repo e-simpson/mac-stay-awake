@@ -12,15 +12,18 @@ final class ActivityLogWindowController {
 
     private let log: ActivityLog
     private let accent: AccentPreference
+    private let refresh: () async -> Void
     private var window: NSWindow?
     private var activation: NSObjectProtocol?
 
-    init(log: ActivityLog, accent: AccentPreference) {
+    init(log: ActivityLog, accent: AccentPreference, refresh: @escaping () async -> Void = {}) {
         self.log = log
         self.accent = accent
+        self.refresh = refresh
     }
 
     func show() {
+        Task { await refresh() }
         let window = self.window ?? makeWindow()
         self.window = window
         // The app has no Dock icon and stays without one; activating it only brings its window

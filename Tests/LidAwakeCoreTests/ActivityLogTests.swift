@@ -33,6 +33,21 @@ final class ActivityLogTests: XCTestCase {
         try Data(text.utf8).write(to: fileURL)
     }
 
+    func testSettingEventPersistsAtOriginalTimeAndPresentsFactualValues() throws {
+        let event = SettingEvent(time: at(0), setting: .powerMode, source: .ac,
+            operation: .restore, outcome: .verified, key: .powermode, prior: 1, current: 2, target: 2)
+        let log = makeLog()
+        log.record(.setting(event), at: event.time)
+        let entry = try XCTUnwrap(ActivityLog.read(from: fileURL).first)
+        XCTAssertEqual(entry, ActivityEntry(time: at(0), event: .setting(event)))
+        XCTAssertEqual(ActivityRow(entry), ActivityRow(title: "AC power mode",
+            detail: "Restored and verified · Previous: Low Power · Current: High Power · Target: High Power", symbol: .setting))
+        XCTAssertTrue(ActivityToken.line(for: entry).contains("outcome=verified key=powermode prior=1.0 current=2.0 target=2.0"))
+        let data = try Data(contentsOf: fileURL)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(json["version"] as? Int, 1)
+    }
+
     func testRecordAddsEntryAtCurrentTime() {
         let log = makeLog()
         log.record(.modeOn(.lidClosed))

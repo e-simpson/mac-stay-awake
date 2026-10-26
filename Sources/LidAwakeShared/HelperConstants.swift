@@ -5,7 +5,7 @@ public enum HelperConstants {
     public static let plistName = "\(helperIdentifier).plist"
     // Replace with your own 10-character Apple Developer Team ID before signing.
     public static let teamIdentifier = "UNCONFIGURED"
-    public static let protocolVersion = 15
+    public static let protocolVersion = 16
 
     // The packaging script evaluates these same requirements before accepting a build.
     public static let appRequirement = "anchor apple generic and identifier \"\(appBundleIdentifier)\" and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = \"\(teamIdentifier)\""

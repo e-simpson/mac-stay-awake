@@ -101,7 +101,7 @@ public final class SafetyPreferences: ObservableObject {
         watchedAppPaths = defaults.stringArray(forKey: Key.watchedAppPaths) ?? []
     }
 
-    /// The timer applies in both modes; the other protections only in Keep alive.
+    /// The timer applies in both modes; the other protections only in Stay Awake.
     public var timerLimit: Int? {
         timerEnabled ? timerSeconds : nil
     }
@@ -150,7 +150,7 @@ public final class SafetyPreferences: ObservableObject {
         idleSleepEnabled = true
     }
 
-    /// Sleep when idle lasts one Keep alive session. The session has already ended, so there is
+    /// Sleep when idle lasts one Stay Awake session. The session has already ended, so there is
     /// nothing to send to the helper and `changes` does not fire.
     public func endIdleSleepSession() {
         guard idleSleepEnabled else { return }

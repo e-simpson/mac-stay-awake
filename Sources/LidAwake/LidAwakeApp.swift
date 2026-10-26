@@ -15,7 +15,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let wakeScheduler: WakeScheduler
     private var rightClickMonitor: Any?
     private var isPreparingToQuit = false
-    private(set) lazy var activityLogWindow = ActivityLogWindowController(log: activityLog, accent: accent)
+    private(set) lazy var activityLogWindow = ActivityLogWindowController(log: activityLog, accent: accent, refresh: { [weak self] in
+        await self?.modeController.refreshSettingEvents()
+    })
     private(set) lazy var watchedAppsWindow = WatchedAppsWindowController(
         preferences: modeController.preferences,
         accent: accent
@@ -33,9 +35,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if PERSONAL_PREVIEW
         let displayAssertion: PowerAssertion = PreviewPowerAssertion()
         let brightness: DisplayBrightnessControlling = PreviewBrightness()
+        let settingEvents: SettingEventFetching = NoSettingEvents()
         #else
         let displayAssertion: PowerAssertion = DisplaySleepAssertion()
-        let brightness: DisplayBrightnessControlling = DisplayBrightness()
+        let brightness: DisplayBrightnessControlling = DisplayBrightness(activityLog: activityLog)
+        let settingEvents: SettingEventFetching = XPCHelperConnection()
         #endif
         let controller = ModeController(
             displayAssertion: displayAssertion,
@@ -45,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             notifier: UserNotificationNotifier(),
             activityLog: activityLog,
             idleEvents: XPCHelperConnection(),
+            settingEvents: settingEvents,
             brightness: brightness
         )
         let scheduler = WakeScheduler(

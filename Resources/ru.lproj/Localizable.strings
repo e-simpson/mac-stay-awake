@@ -1,7 +1,7 @@
 /* Modes */
 "Off" = "Выкл.";
 "Keep Screen On" = "Не гасить экран";
-"Keep alive" = "С закрытой крышкой";
+"Stay Awake" = "С закрытой крышкой";
 "The Mac sleeps as usual." = "Mac засыпает как обычно.";
 "For stepping away from the desk. Closing the lid still puts the Mac to sleep." = "Чтобы отойти от стола. Если закрыть крышку, Mac всё равно уснёт.";
 "For the road. Keeps working with the lid shut or the screen locked." = "В дорогу. Mac работает с закрытой крышкой и при заблокированном экране.";
@@ -49,7 +49,7 @@
 "Wake at" = "Проснуться в";
 "Every day, on power only" = "Каждый день, только от сети";
 "Could not set the wake" = "Не удалось назначить пробуждение";
-"Lock screen when the lid closes" = "Блокировать при закрытии крышки";
+"Lock when closed" = "Блокировать при закрытии крышки";
 "Screen lock is not available on this macOS version." = "Блокировка экрана недоступна в этой версии macOS.";
 "Launch at login" = "Запускать при входе";
 "Turn it on in System Settings > General > Login Items & Extensions." = "Включается здесь: «Системные настройки» > «Основные» > «Объекты входа и расширения».";
@@ -69,10 +69,10 @@
 /* Helper messages */
 "Permission needed" = "Нужно разрешение";
 "Allow MacStayAwake in System Settings > General > Login Items & Extensions. The mode turns on as soon as you do." = "Разрешите MacStayAwake: «Системные настройки» > «Основные» > «Объекты входа и расширения». Режим включится сразу после этого.";
-"Allow MacStayAwake in System Settings > General > Login Items & Extensions, then choose Keep alive again." = "Разрешите MacStayAwake: «Системные настройки» > «Основные» > «Объекты входа и расширения». Затем снова выберите «С закрытой крышкой».";
+"Allow MacStayAwake in System Settings > General > Login Items & Extensions, then choose Stay Awake again." = "Разрешите MacStayAwake: «Системные настройки» > «Основные» > «Объекты входа и расширения». Затем снова выберите «С закрытой крышкой».";
 "Allow MacStayAwake in System Settings > General > Login Items & Extensions." = "Разрешите MacStayAwake: «Системные настройки» > «Основные» > «Объекты входа и расширения».";
 "Move MacStayAwake to Applications" = "Переместить MacStayAwake в «Программы»";
-"Keep alive needs the app in the Applications folder." = "Для режима «С закрытой крышкой» приложение должно лежать в папке «Программы».";
+"Stay Awake needs the app in the Applications folder." = "Для режима «С закрытой крышкой» приложение должно лежать в папке «Программы».";
 "MacStayAwake must be in /Applications to install the helper." = "Чтобы установить помощник, MacStayAwake должен лежать в папке «Программы».";
 "The helper did not start" = "Помощник не запустился";
 "Install the helper to run with the lid closed." = "Для работы с закрытой крышкой нужно установить помощник.";
@@ -123,8 +123,8 @@
 "Last 200 events · kept only on this Mac" = "Последние 200 событий · только на этом Mac";
 "Clear" = "Очистить";
 "No events yet" = "Событий пока нет";
-"Keep alive turned on" = "Режим «С закрытой крышкой» включён";
-"Keep alive turned off" = "Режим «С закрытой крышкой» выключен";
+"Stay Awake turned on" = "Режим «С закрытой крышкой» включён";
+"Stay Awake turned off" = "Режим «С закрытой крышкой» выключен";
 "Keep Screen On turned on" = "Режим «Не гасить экран» включён";
 "Keep Screen On turned off" = "Режим «Не гасить экран» выключен";
 "Paused" = "Пауза";
@@ -134,7 +134,7 @@
 "Mac woke up" = "Mac проснулся";
 "By you" = "Вручную";
 "On schedule" = "По расписанию";
-"Keep alive not turned on" = "Режим «С закрытой крышкой» не включён";
+"Stay Awake not turned on" = "Режим «С закрытой крышкой» не включён";
 "Not on power" = "Питание не подключено";
 "Mac was on battery or turned off" = "Mac работал от батареи или был выключен";
 "The timer ended after %@." = "Таймер сработал через %@.";
@@ -156,3 +156,33 @@
 "Not open" = "Не открыта";
 "Add Other App…" = "Добавить другую…";
 "Done" = "Готово";
+
+"Built-in display brightness" = "Яркость встроенного экрана";
+
+"Battery power mode" = "Режим питания от батареи";
+
+"AC power mode" = "Режим питания от сети";
+
+"Power mode" = "Режим питания";
+
+"Applied and verified" = "Применено и проверено";
+
+"Restored and verified" = "Восстановлено и проверено";
+
+"Already at target" = "Уже задано нужное значение";
+
+"External change preserved" = "Внешнее изменение сохранено";
+
+"Recovery pending" = "Ожидается восстановление";
+
+"Change failed" = "Не удалось изменить";
+
+"Unknown" = "Неизвестно";
+
+"Automatic" = "Автоматически";
+
+"Low Power" = "Энергосбережение";
+
+"High Power" = "Высокая мощность";
+
+"Previous: %@ · Current: %@ · Target: %@" = "Ранее: %@ · Сейчас: %@ · Цель: %@";

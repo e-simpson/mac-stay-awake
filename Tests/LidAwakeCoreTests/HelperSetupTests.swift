@@ -157,7 +157,7 @@ final class HelperSetupTests: XCTestCase {
         XCTAssertEqual(setup.prompt, .moveToApplications)
         XCTAssertEqual(
             setup.prompt?.text,
-            "Keep alive needs the app in the Applications folder."
+            "Stay Awake needs the app in the Applications folder."
         )
         XCTAssertFalse(setup.isWaiting)
         XCTAssertEqual(selected, [])
@@ -266,7 +266,7 @@ final class HelperSetupTests: XCTestCase {
         let setup = makeSetup(helper)
         await setup.requestWake()
         XCTAssertEqual(helper.calls, ["refresh", "install"])
-        XCTAssertEqual(setup.prompt, .approval, "the same message as for Keep alive")
+        XCTAssertEqual(setup.prompt, .approval, "the same message as for Stay Awake")
         XCTAssertEqual(setup.prompt?.action, .openSystemSettings)
         XCTAssertFalse(setup.isWaiting, "no mode waits for the helper")
         XCTAssertEqual(wakeSyncs, 0)
@@ -359,7 +359,7 @@ final class HelperSetupTests: XCTestCase {
     private let modeApprovalText =
         "Allow MacStayAwake in System Settings > General > Login Items & Extensions. The mode turns on as soon as you do."
     private let modeExpiredText =
-        "Allow MacStayAwake in System Settings > General > Login Items & Extensions, then choose Keep alive again."
+        "Allow MacStayAwake in System Settings > General > Login Items & Extensions, then choose Stay Awake again."
 
     private func helperMessage(_ setup: HelperSetup) -> WindowMessage? {
         WindowMessage.list(helper: setup.prompt, helperForWake: setup.isPromptForWake, mode: nil).first

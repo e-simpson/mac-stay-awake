@@ -1,7 +1,7 @@
 /* Modes */
 "Off" = "关闭";
 "Keep Screen On" = "保持屏幕常亮";
-"Keep alive" = "合盖运行";
+"Stay Awake" = "合盖运行";
 "The Mac sleeps as usual." = "Mac 按正常设置进入睡眠。";
 "For stepping away from the desk. Closing the lid still puts the Mac to sleep." = "适合暂时离开时使用。合上屏幕后，Mac 仍会进入睡眠。";
 "For the road. Keeps working with the lid shut or the screen locked." = "适合外出时使用。合上屏幕或锁屏后，Mac 仍会继续运行。";
@@ -49,7 +49,7 @@
 "Wake at" = "唤醒时间";
 "Every day, on power only" = "每天，仅在接通电源时";
 "Could not set the wake" = "无法设置唤醒";
-"Lock screen when the lid closes" = "合盖时锁定屏幕";
+"Lock when closed" = "合盖时锁定屏幕";
 "Screen lock is not available on this macOS version." = "当前 macOS 版本不支持此锁屏功能。";
 "Launch at login" = "登录时启动";
 "Turn it on in System Settings > General > Login Items & Extensions." = "请在“系统设置 > 通用 > 登录项与扩展”中开启。";
@@ -69,10 +69,10 @@
 /* Helper messages */
 "Permission needed" = "需要授权";
 "Allow MacStayAwake in System Settings > General > Login Items & Extensions. The mode turns on as soon as you do." = "请在“系统设置 > 通用 > 登录项与扩展”中允许 MacStayAwake。授权后将自动开启合盖运行。";
-"Allow MacStayAwake in System Settings > General > Login Items & Extensions, then choose Keep alive again." = "请在“系统设置 > 通用 > 登录项与扩展”中允许 MacStayAwake，然后重新选择“合盖运行”。";
+"Allow MacStayAwake in System Settings > General > Login Items & Extensions, then choose Stay Awake again." = "请在“系统设置 > 通用 > 登录项与扩展”中允许 MacStayAwake，然后重新选择“合盖运行”。";
 "Allow MacStayAwake in System Settings > General > Login Items & Extensions." = "请在“系统设置 > 通用 > 登录项与扩展”中允许 MacStayAwake。";
 "Move MacStayAwake to Applications" = "将 MacStayAwake 移至“应用程序”";
-"Keep alive needs the app in the Applications folder." = "使用合盖运行前，请将应用移至“应用程序”文件夹。";
+"Stay Awake needs the app in the Applications folder." = "使用合盖运行前，请将应用移至“应用程序”文件夹。";
 "MacStayAwake must be in /Applications to install the helper." = "安装辅助程序前，请将 MacStayAwake 移至 /Applications。";
 "The helper did not start" = "辅助程序未启动";
 "Install the helper to run with the lid closed." = "请先安装辅助程序，再使用合盖运行。";
@@ -123,8 +123,8 @@
 "Last 200 events · kept only on this Mac" = "最近 200 条记录 · 仅保存在这台 Mac 上";
 "Clear" = "清除";
 "No events yet" = "暂无记录";
-"Keep alive turned on" = "已开启“合盖运行”";
-"Keep alive turned off" = "已关闭“合盖运行”";
+"Stay Awake turned on" = "已开启“合盖运行”";
+"Stay Awake turned off" = "已关闭“合盖运行”";
 "Keep Screen On turned on" = "已开启“保持屏幕常亮”";
 "Keep Screen On turned off" = "已关闭“保持屏幕常亮”";
 "Paused" = "已暂停";
@@ -134,7 +134,7 @@
 "Mac woke up" = "Mac 已唤醒";
 "By you" = "手动";
 "On schedule" = "按计划";
-"Keep alive not turned on" = "未开启“合盖运行”";
+"Stay Awake not turned on" = "未开启“合盖运行”";
 "Not on power" = "未接通电源";
 "Mac was on battery or turned off" = "Mac 使用电池供电或已关机";
 "The timer ended after %@." = "定时器在 %@后结束。";
@@ -156,3 +156,33 @@
 "Not open" = "未打开";
 "Add Other App…" = "添加其他应用…";
 "Done" = "完成";
+
+"Built-in display brightness" = "内置显示屏亮度";
+
+"Battery power mode" = "电池电源模式";
+
+"AC power mode" = "接通电源时的模式";
+
+"Power mode" = "电源模式";
+
+"Applied and verified" = "已应用并验证";
+
+"Restored and verified" = "已恢复并验证";
+
+"Already at target" = "已达到目标值";
+
+"External change preserved" = "已保留外部更改";
+
+"Recovery pending" = "等待恢复";
+
+"Change failed" = "更改失败";
+
+"Unknown" = "未知";
+
+"Automatic" = "自动";
+
+"Low Power" = "低电量模式";
+
+"High Power" = "高功率模式";
+
+"Previous: %@ · Current: %@ · Target: %@" = "原值：%@ · 当前：%@ · 目标：%@";

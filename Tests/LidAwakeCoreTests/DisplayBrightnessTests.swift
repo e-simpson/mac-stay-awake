@@ -1,4 +1,5 @@
 import Foundation
+import LidAwakeShared
 import XCTest
 @testable import LidAwakeCore
 
@@ -6,6 +7,7 @@ import XCTest
 final class DisplayBrightnessTests: XCTestCase {
     private final class Panel: DisplayBrightnessAccess {
         var brightness: Float = 0.72
+        var reads = 0
         var readError: DisplayBrightnessError?
         var writeError: DisplayBrightnessError?
         var ignoredWrites = false
@@ -13,6 +15,7 @@ final class DisplayBrightnessTests: XCTestCase {
         var writes: [Float] = []
 
         func read() throws -> Float {
+            reads += 1
             if let readError { throw readError }
             return brightness
         }
@@ -34,8 +37,67 @@ final class DisplayBrightnessTests: XCTestCase {
     }
 
     override func tearDown() {
+        try? FileManager.default.removeItem(at: FileManager.default.temporaryDirectory.appendingPathComponent(suiteName))
         defaults.removePersistentDomain(forName: suiteName)
         super.tearDown()
+    }
+
+    private func makeLog() -> ActivityLog {
+        ActivityLog(fileURL: FileManager.default.temporaryDirectory
+            .appendingPathComponent(suiteName).appendingPathComponent("log.json"))
+    }
+
+    private func observations(_ log: ActivityLog) -> [SettingEvent] {
+        log.entries.compactMap { if case .setting(let event) = $0.event { return event }; return nil }
+    }
+
+    func testVerifiedEventsFollowActualWritesAndKeepOriginalTime() {
+        let panel = Panel()
+        let log = makeLog()
+        let time = Date(timeIntervalSince1970: 1234)
+        let brightness = DisplayBrightness(access: panel, defaults: defaults, activityLog: log, now: { time })
+        brightness.close()
+        brightness.close()
+        brightness.restore()
+        let events = observations(log)
+        XCTAssertEqual(events.map(\.outcome), [.verified, .verified])
+        XCTAssertEqual(events.map(\.operation), [.apply, .restore])
+        XCTAssertEqual(events.map(\.time), [time, time])
+        XCTAssertEqual(events[0].prior!, Double(Float(0.72)), accuracy: 0.0001)
+        XCTAssertEqual(events[0].current, 0)
+        XCTAssertEqual(events[1].current!, Double(Float(0.72)), accuracy: 0.0001)
+    }
+
+    func testIgnoredWritesPendingAndExternalChangesNeverClaimVerification() {
+        let panel = Panel()
+        let log = makeLog()
+        let brightness = DisplayBrightness(access: panel, defaults: defaults, activityLog: log)
+        panel.ignoredWrites = true
+        brightness.close()
+        XCTAssertEqual(observations(log).map(\.outcome), [.failed])
+        panel.ignoredWrites = false
+        brightness.close()
+        panel.writeError = .displayOffline
+        brightness.restore()
+        brightness.restore()
+        XCTAssertEqual(observations(log).map(\.outcome), [.failed, .verified, .pending])
+        panel.writeError = nil
+        panel.brightness = 0.35
+        brightness.restore()
+        XCTAssertEqual(observations(log).last?.outcome, .externalChangePreserved)
+        XCTAssertEqual(observations(log).last!.current!, Double(Float(0.35)), accuracy: 0.0001)
+        XCTAssertEqual(observations(log).last?.prior, observations(log).last?.current,
+                       "Preserving an external value must not imply a restoration write")
+    }
+
+    func testOriginalZeroDoesNotClaimBrightnessWasChanged() {
+        let panel = Panel()
+        panel.brightness = 0
+        let log = makeLog()
+        let brightness = DisplayBrightness(access: panel, defaults: defaults, activityLog: log)
+        brightness.close()
+        brightness.restore()
+        XCTAssertEqual(observations(log).map(\.outcome), [.alreadyAtTarget, .alreadyAtTarget])
     }
 
     func testRepeatedCloseAndSamplingCannotReplaceTheOriginalWithAppZero() {
@@ -76,21 +138,70 @@ final class DisplayBrightnessTests: XCTestCase {
         XCTAssertEqual(panel.brightness, 0.72)
     }
 
+    func testCorruptRecoveryIsReportedOncePerOperationWithoutReadingTheDisplay() {
+        defaults.set(Data("corrupt".utf8), forKey: "displayBrightnessPendingRestore")
+        let panel = Panel()
+        let log = makeLog()
+        let brightness = DisplayBrightness(access: panel, defaults: defaults, activityLog: log)
+        XCTAssertEqual(brightness.close(), .unavailable)
+        XCTAssertEqual(brightness.close(), .unavailable)
+        XCTAssertEqual(brightness.restore(), .unavailable)
+        XCTAssertEqual(brightness.restore(), .unavailable)
+        XCTAssertEqual(observations(log).map(\.outcome), [.pending, .pending])
+        XCTAssertEqual(observations(log).map(\.operation), [.apply, .restore])
+        XCTAssertEqual(panel.reads, 0)
+        XCTAssertTrue(panel.writes.isEmpty)
+        XCTAssertTrue(brightness.hasPendingRestore)
+    }
+
+    func testUnverifiableOwnedDisplayIsReportedWithoutAdditionalReadsOrWrites() {
+        let panel = Panel()
+        let log = makeLog()
+        let brightness = DisplayBrightness(access: panel, defaults: defaults, activityLog: log)
+        XCTAssertEqual(brightness.close(), .dimmed)
+        let writes = panel.writes
+        let reads = panel.reads
+        panel.readError = .displayOffline
+        XCTAssertEqual(brightness.close(), .pending)
+        XCTAssertEqual(brightness.close(), .pending)
+        panel.readError = .readFailed
+        XCTAssertEqual(brightness.close(), .unavailable)
+        panel.readError = nil
+        panel.brightness = .nan
+        XCTAssertEqual(brightness.close(), .unavailable)
+        XCTAssertEqual(brightness.restore(), .pending)
+        XCTAssertEqual(brightness.restore(), .pending)
+        XCTAssertEqual(observations(log).map(\.outcome), [.verified, .pending, .pending])
+        XCTAssertEqual(panel.reads, reads + 6)
+        XCTAssertEqual(panel.writes, writes)
+        XCTAssertTrue(observations(log).allSatisfy(\.isValid))
+        XCTAssertTrue(brightness.hasPendingRestore)
+    }
+
     func testUnavailableOrInvalidSampleNeverInventsBrightnessOrDims() {
         for value in [Float.nan, -Float.infinity, -0.1, 1.1] {
             let panel = Panel()
             panel.brightness = value
-            let brightness = DisplayBrightness(access: panel, defaults: defaults)
+            let log = makeLog()
+            log.clear()
+            let brightness = DisplayBrightness(access: panel, defaults: defaults, activityLog: log)
             XCTAssertEqual(brightness.sampleWhileOpen(), .unavailable)
             XCTAssertEqual(brightness.close(), .unavailable)
+            XCTAssertEqual(brightness.close(), .unavailable)
+            XCTAssertEqual(observations(log).map(\.outcome), [.failed])
+            XCTAssertTrue(observations(log).allSatisfy(\.isValid))
             XCTAssertTrue(panel.writes.isEmpty)
             XCTAssertFalse(brightness.hasPendingRestore)
         }
         for error in [DisplayBrightnessError.unavailable, .displayOffline, .readFailed] {
             let panel = Panel()
             panel.readError = error
-            let brightness = DisplayBrightness(access: panel, defaults: defaults)
+            let log = makeLog()
+            log.clear()
+            let brightness = DisplayBrightness(access: panel, defaults: defaults, activityLog: log)
             XCTAssertEqual(brightness.close(), .unavailable)
+            XCTAssertEqual(brightness.close(), .unavailable)
+            XCTAssertEqual(observations(log).map(\.outcome), [.failed])
             XCTAssertTrue(panel.writes.isEmpty)
             XCTAssertFalse(brightness.hasPendingRestore)
         }

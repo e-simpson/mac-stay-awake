@@ -3,7 +3,7 @@ import LidAwakeShared
 
 /// Which protections the window offers for a mode.
 public enum SafetyLayout: Equatable {
-    /// Off and Keep alive: every protection can be changed.
+    /// Off and Stay Awake: every protection can be changed.
     case all
     /// Keep Screen On: only the timer applies; the rest is shown dimmed.
     case timerOnly
@@ -84,7 +84,7 @@ public enum MessageKind: Equatable {
     case info
 }
 
-/// A message about the helper after Keep alive was chosen, with the action it offers.
+/// A message about the helper after Stay Awake was chosen, with the action it offers.
 public enum HelperPrompt: Equatable {
     case approval
     /// The approval did not come in time and the mode will not start on its own any more.
@@ -127,10 +127,10 @@ public enum HelperPrompt: Equatable {
             )
         case .approvalExpired:
             return String(
-                localized: "Allow MacStayAwake in System Settings > General > Login Items & Extensions, then choose Keep alive again."
+                localized: "Allow MacStayAwake in System Settings > General > Login Items & Extensions, then choose Stay Awake again."
             )
         case .moveToApplications:
-            return String(localized: "Keep alive needs the app in the Applications folder.")
+            return String(localized: "Stay Awake needs the app in the Applications folder.")
         case .failed(let message):
             return message
         }
@@ -159,7 +159,7 @@ public enum ModeMessage: Equatable {
     case couldNotTurnOn(String)
     /// A mode ended on its own and the helper or the app gave the reason.
     case turnedOff(String)
-    /// Keep alive ended because the helper stopped answering or failed.
+    /// Stay Awake ended because the helper stopped answering or failed.
     case turnedOffWithError(String)
     /// The helper failed at something other than starting or keeping a mode.
     case failed(String)

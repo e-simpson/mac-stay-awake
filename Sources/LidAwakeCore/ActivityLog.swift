@@ -4,6 +4,7 @@ import LidAwakeShared
 
 /// What happened, without any text: the log window words it in the language of the interface.
 public enum ActivityEvent: Equatable {
+    case setting(SettingEvent)
     case modeOn(Mode)
     /// Turned on after the Mac woke on schedule.
     case modeOnBySchedule(Mode)
@@ -183,7 +184,7 @@ struct StoredEntry: Codable {
     }
 
     private enum Key: String, CodingKey {
-        case kind, time, mode, reason, battery, idle, timer, message, name, busiest, minutes, by
+        case kind, time, mode, reason, battery, idle, timer, message, name, busiest, minutes, by, setting
     }
 
     // A damaged entry is skipped like an unknown one, so it does not cost the rest of the log.
@@ -196,6 +197,9 @@ struct StoredEntry: Codable {
         let kind = try container.decode(String.self, forKey: .kind)
         let event: ActivityEvent?
         switch kind {
+        case ActivityToken.setting:
+            let observation = try container.decode(SettingEvent.self, forKey: .setting)
+            event = observation.isValid ? .setting(observation) : nil
         case ActivityToken.modeOn:
             let bySchedule = try container.decodeIfPresent(String.self, forKey: .by) == ActivityToken.schedule
             event = try container.decode(String.self, forKey: .mode).modeFromToken
@@ -274,6 +278,8 @@ struct StoredEntry: Codable {
         try container.encode(ActivityToken.kind(of: entry.event), forKey: .kind)
         try container.encode(entry.time.timeIntervalSince1970, forKey: .time)
         switch entry.event {
+        case .setting(let event):
+            try container.encode(event, forKey: .setting)
         case .modeOn(let mode):
             try container.encode(ActivityToken.mode(mode), forKey: .mode)
         case .modeOnBySchedule(let mode):
@@ -314,6 +320,7 @@ struct StoredEntry: Codable {
 
 /// The words used for events in the file and by `--print-log`.
 public enum ActivityToken {
+    static let setting = "setting"
     static let modeOn = "mode-on"
     static let modeOff = "mode-off"
     static let modeSkipped = "mode-skipped"
@@ -347,6 +354,7 @@ public enum ActivityToken {
 
     static func kind(of event: ActivityEvent) -> String {
         switch event {
+        case .setting: return setting
         case .modeOn, .modeOnBySchedule: return modeOn
         case .modeOff: return modeOff
         case .modeSkipped: return modeSkipped
@@ -401,6 +409,14 @@ public enum ActivityToken {
         formatter.timeZone = timeZone
         var parts = [formatter.string(from: entry.time), kind(of: entry.event)]
         switch entry.event {
+        case .setting(let event):
+            parts += ["setting=\(event.setting.rawValue)", "source=\(event.source.rawValue)",
+                      "operation=\(event.operation.rawValue)", "outcome=\(event.outcome.rawValue)"]
+            if let key = event.key { parts.append("key=\(key.rawValue)") }
+            if let prior = event.prior { parts.append("prior=\(prior)") }
+            if let current = event.current { parts.append("current=\(current)") }
+            if let target = event.target { parts.append("target=\(target)") }
+            if let detail = event.detail { parts.append("message=\(quoted(detail))") }
         case .modeOn(let mode):
             parts.append("mode=\(self.mode(mode))")
         case .modeOnBySchedule(let mode):

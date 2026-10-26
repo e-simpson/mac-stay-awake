@@ -1,7 +1,7 @@
 /* Modes */
 "Off" = "Aus";
 "Keep Screen On" = "Bildschirm anlassen";
-"Keep alive" = "Mit geschlossenem Deckel";
+"Stay Awake" = "Mit geschlossenem Deckel";
 "The Mac sleeps as usual." = "Der Mac schläft wie gewohnt.";
 "For stepping away from the desk. Closing the lid still puts the Mac to sleep." = "Zum kurzen Weggehen vom Schreibtisch. Beim Zuklappen schläft der Mac trotzdem ein.";
 "For the road. Keeps working with the lid shut or the screen locked." = "Für unterwegs. Läuft weiter bei geschlossenem Deckel oder gesperrtem Bildschirm.";
@@ -49,7 +49,7 @@
 "Wake at" = "Aufwachen um";
 "Every day, on power only" = "Täglich, nur am Netzteil";
 "Could not set the wake" = "Aufwachen konnte nicht eingestellt werden";
-"Lock screen when the lid closes" = "Beim Zuklappen sperren";
+"Lock when closed" = "Beim Zuklappen sperren";
 "Screen lock is not available on this macOS version." = "Die Bildschirmsperre ist in dieser macOS-Version nicht verfügbar.";
 "Launch at login" = "Bei der Anmeldung öffnen";
 "Turn it on in System Settings > General > Login Items & Extensions." = "Einschalten unter Systemeinstellungen > Allgemein > Anmeldeobjekte & Erweiterungen.";
@@ -69,10 +69,10 @@
 /* Helper messages */
 "Permission needed" = "Erlaubnis erforderlich";
 "Allow MacStayAwake in System Settings > General > Login Items & Extensions. The mode turns on as soon as you do." = "Erlaube MacStayAwake unter Systemeinstellungen > Allgemein > Anmeldeobjekte & Erweiterungen. Danach schaltet sich der Modus sofort ein.";
-"Allow MacStayAwake in System Settings > General > Login Items & Extensions, then choose Keep alive again." = "Erlaube MacStayAwake unter Systemeinstellungen > Allgemein > Anmeldeobjekte & Erweiterungen und wähle danach erneut „Mit geschlossenem Deckel“.";
+"Allow MacStayAwake in System Settings > General > Login Items & Extensions, then choose Stay Awake again." = "Erlaube MacStayAwake unter Systemeinstellungen > Allgemein > Anmeldeobjekte & Erweiterungen und wähle danach erneut „Mit geschlossenem Deckel“.";
 "Allow MacStayAwake in System Settings > General > Login Items & Extensions." = "Erlaube MacStayAwake unter Systemeinstellungen > Allgemein > Anmeldeobjekte & Erweiterungen.";
 "Move MacStayAwake to Applications" = "MacStayAwake in „Programme“ bewegen";
-"Keep alive needs the app in the Applications folder." = "Für „Mit geschlossenem Deckel“ muss die App im Ordner „Programme“ liegen.";
+"Stay Awake needs the app in the Applications folder." = "Für „Mit geschlossenem Deckel“ muss die App im Ordner „Programme“ liegen.";
 "MacStayAwake must be in /Applications to install the helper." = "Zum Installieren des Hilfsprogramms muss MacStayAwake im Ordner „Programme“ liegen.";
 "The helper did not start" = "Das Hilfsprogramm ist nicht gestartet";
 "Install the helper to run with the lid closed." = "Für den Betrieb mit geschlossenem Deckel muss das Hilfsprogramm installiert sein.";
@@ -123,8 +123,8 @@
 "Last 200 events · kept only on this Mac" = "Die letzten 200 Ereignisse · nur auf diesem Mac";
 "Clear" = "Löschen";
 "No events yet" = "Noch keine Ereignisse";
-"Keep alive turned on" = "„Mit geschlossenem Deckel“ eingeschaltet";
-"Keep alive turned off" = "„Mit geschlossenem Deckel“ ausgeschaltet";
+"Stay Awake turned on" = "„Mit geschlossenem Deckel“ eingeschaltet";
+"Stay Awake turned off" = "„Mit geschlossenem Deckel“ ausgeschaltet";
 "Keep Screen On turned on" = "„Bildschirm anlassen“ eingeschaltet";
 "Keep Screen On turned off" = "„Bildschirm anlassen“ ausgeschaltet";
 "Paused" = "Pausiert";
@@ -134,7 +134,7 @@
 "Mac woke up" = "Mac aufgewacht";
 "By you" = "Manuell";
 "On schedule" = "Nach Zeitplan";
-"Keep alive not turned on" = "„Mit geschlossenem Deckel“ nicht eingeschaltet";
+"Stay Awake not turned on" = "„Mit geschlossenem Deckel“ nicht eingeschaltet";
 "Not on power" = "Kein Netzteil angeschlossen";
 "Mac was on battery or turned off" = "Mac lief im Akkubetrieb oder war ausgeschaltet";
 "The timer ended after %@." = "Der Timer ist nach %@ abgelaufen.";
@@ -156,3 +156,33 @@
 "Not open" = "Nicht geöffnet";
 "Add Other App…" = "Andere App hinzufügen …";
 "Done" = "Fertig";
+
+"Built-in display brightness" = "Helligkeit des integrierten Displays";
+
+"Battery power mode" = "Energiemodus im Akkubetrieb";
+
+"AC power mode" = "Energiemodus am Netzteil";
+
+"Power mode" = "Energiemodus";
+
+"Applied and verified" = "Angewendet und bestätigt";
+
+"Restored and verified" = "Wiederhergestellt und bestätigt";
+
+"Already at target" = "Zielwert bereits eingestellt";
+
+"External change preserved" = "Externe Änderung beibehalten";
+
+"Recovery pending" = "Wiederherstellung ausstehend";
+
+"Change failed" = "Änderung fehlgeschlagen";
+
+"Unknown" = "Unbekannt";
+
+"Automatic" = "Automatisch";
+
+"Low Power" = "Stromsparmodus";
+
+"High Power" = "Hohe Leistung";
+
+"Previous: %@ · Current: %@ · Target: %@" = "Vorher: %@ · Aktuell: %@ · Ziel: %@";

@@ -40,11 +40,11 @@ fi
 ARCH="${ARCH:-arm64}"
 case "$ARCH" in
     arm64)
-        APP="build/$BUNDLE_NAME.app"
+        APP="$ROOT/build/$BUNDLE_NAME.app"
         SCRATCH=".build"
         ;;
     x86_64)
-        APP="build/x86_64/$BUNDLE_NAME.app"
+        APP="$ROOT/build/x86_64/$BUNDLE_NAME.app"
         SCRATCH=".build/x86_64"
         ;;
     *)
@@ -83,7 +83,7 @@ cp "Resources/$HELPER_ID.plist" "$APP/Contents/Library/LaunchDaemons/$HELPER_ID.
 ICON_TMP="$(mktemp -d)"
 trap 'rm -rf "$ICON_TMP"' EXIT
 mkdir -p "$APP/Contents/Resources"
-xcrun actool Resources/AppIcon.icon \
+xcrun actool "$ROOT/Resources/AppIcon.icon" \
     --compile "$APP/Contents/Resources" \
     --app-icon AppIcon \
     --platform macosx \
@@ -102,6 +102,9 @@ for LPROJ in Resources/*.lproj; do
     plutil -lint -s "$LPROJ"/*.strings
     cp -R "$LPROJ" "$APP/Contents/Resources/"
 done
+
+mkdir -p "$APP/Contents/Resources/Licenses"
+cp LICENSE LICENSE-BRIGHTNESS-REFERENCE NOTICE "$APP/Contents/Resources/Licenses/"
 
 if [[ "$PREVIEW_BUILD" == 1 ]]; then
     /usr/libexec/PlistBuddy -c "Add :MacStayAwakePreview bool true" "$APP/Contents/Info.plist"

@@ -1,6 +1,7 @@
 import CoreGraphics
 import Darwin
 import Foundation
+import LidAwakeShared
 
 public enum DisplayBrightnessResult: Equatable {
     case unchanged, sampled, dimmed, restored, preservedExternalChange, pending, unavailable
@@ -36,10 +37,16 @@ public final class DisplayBrightness: DisplayBrightnessControlling {
     private let access: DisplayBrightnessAccess
     private let defaults: UserDefaults
     private var lastOpenBrightness: Float?
+    private let activityLog: ActivityLogging
+    private let now: () -> Date
+    private var lastObservations: [SettingEvent.Operation: SettingEvent] = [:]
 
-    public init(access: DisplayBrightnessAccess = SystemDisplayBrightness(), defaults: UserDefaults = .standard) {
+    public init(access: DisplayBrightnessAccess = SystemDisplayBrightness(), defaults: UserDefaults = .standard,
+                activityLog: ActivityLogging = NoActivityLog(), now: @escaping () -> Date = Date.init) {
         self.access = access
         self.defaults = defaults
+        self.activityLog = activityLog
+        self.now = now
     }
 
     public var hasPendingRestore: Bool { defaults.object(forKey: Self.pendingKey) != nil }
@@ -55,48 +62,81 @@ public final class DisplayBrightness: DisplayBrightnessControlling {
     @discardableResult
     public func close() -> DisplayBrightnessResult {
         var pending: Pending
+        var prior: Float?
         if hasPendingRestore {
-            guard let saved = readPending() else { return .unavailable }
+            guard let saved = readPending() else {
+                record(.apply, .pending, target: 0)
+                return .unavailable
+            }
             pending = saved
             if pending.dimmed {
                 do {
                     let current = try access.read()
-                    guard Self.valid(current) else { return .unavailable }
+                    guard Self.valid(current) else {
+                        record(.apply, .pending, target: 0)
+                        return .unavailable
+                    }
+                    if !Self.matches(current, 0) {
+                        record(.apply, .externalChangePreserved, prior: pending.brightness, current: current, target: 0)
+                    }
                     return Self.matches(current, 0) ? .dimmed : .preservedExternalChange
                 } catch DisplayBrightnessError.displayOffline {
+                    record(.apply, .pending, target: 0)
                     return .pending
                 } catch {
+                    record(.apply, .pending, target: 0)
                     return .unavailable
                 }
             }
-            if let current = try? access.read(), Self.valid(current),
-               !Self.matches(current, 0), !Self.matches(current, pending.brightness) {
+            if let current = try? access.read(), Self.valid(current) {
+                prior = current
+            }
+            if let current = prior, !Self.matches(current, 0), !Self.matches(current, pending.brightness) {
+                record(.apply, .externalChangePreserved, prior: pending.brightness, current: current, target: 0)
                 return .preservedExternalChange
             }
         } else {
             let current: Float?
             do {
                 current = try access.read()
+                prior = current
             } catch DisplayBrightnessError.unavailable {
+                record(.apply, .failed, target: 0)
                 return .unavailable
             } catch {
                 current = lastOpenBrightness
             }
-            guard let current, Self.valid(current) else { return .unavailable }
+            guard let current, Self.valid(current) else {
+                record(.apply, .failed, target: 0)
+                return .unavailable
+            }
             pending = Pending(brightness: current, dimmed: false)
             // Persist the original before attempting a write, including when the panel is offline.
-            guard save(pending) else { return .unavailable }
+            guard save(pending) else {
+                record(.apply, .failed, prior: prior, target: 0)
+                return .unavailable
+            }
         }
         do {
             try access.write(0)
-            guard Self.matches(try access.read(), 0) else { return .unavailable }
+            let current = try access.read()
+            guard Self.matches(current, 0) else {
+                record(.apply, .failed, prior: pending.brightness, current: Self.valid(current) ? current : nil, target: 0)
+                return .unavailable
+            }
+            record(.apply, prior.map { Self.matches($0, 0) } == true ? .alreadyAtTarget : .verified,
+                   prior: prior, current: current, target: 0)
             pending.dimmed = true
             // The earlier record still permits safe restoration if this second save fails.
-            _ = save(pending)
+            if !save(pending) {
+                record(.apply, .pending, prior: pending.brightness, current: current, target: 0)
+            }
             return .dimmed
         } catch DisplayBrightnessError.displayOffline {
+            record(.apply, .pending, prior: pending.brightness, target: 0)
             return .pending
         } catch {
+            record(.apply, .failed, prior: pending.brightness, target: 0)
             return .unavailable
         }
     }
@@ -104,27 +144,55 @@ public final class DisplayBrightness: DisplayBrightnessControlling {
     @discardableResult
     public func restore() -> DisplayBrightnessResult {
         guard hasPendingRestore else { return .unchanged }
-        guard let pending = readPending() else { return .unavailable }
+        guard let pending = readPending() else {
+            record(.restore, .pending)
+            return .unavailable
+        }
         do {
             let current = try access.read()
-            guard Self.valid(current) else { return .pending }
+            guard Self.valid(current) else {
+                record(.restore, .pending, target: pending.brightness)
+                return .pending
+            }
             // A nonzero value is observable evidence that zero is no longer ours to restore over.
             // This also handles a failed dim operation that left the original value untouched.
             if !Self.matches(current, 0) {
                 clearPending()
                 lastOpenBrightness = current
+                record(.restore, Self.matches(current, pending.brightness) ? .alreadyAtTarget : .externalChangePreserved,
+                       prior: current, current: current, target: pending.brightness)
                 return Self.matches(current, pending.brightness) ? .unchanged : .preservedExternalChange
             }
             try access.write(pending.brightness)
-            guard Self.matches(try access.read(), pending.brightness) else { return .pending }
+            let restored = try access.read()
+            guard Self.matches(restored, pending.brightness) else {
+                record(.restore, .pending, prior: current, current: Self.valid(restored) ? restored : nil, target: pending.brightness)
+                return .pending
+            }
+            record(.restore, Self.matches(current, pending.brightness) ? .alreadyAtTarget : .verified,
+                   prior: current, current: restored, target: pending.brightness)
             clearPending()
             lastOpenBrightness = pending.brightness
             return .restored
         } catch DisplayBrightnessError.unavailable {
+            record(.restore, .pending, target: pending.brightness)
             return .unavailable
         } catch {
+            record(.restore, .pending, target: pending.brightness)
             return .pending
         }
+    }
+
+    private func record(_ operation: SettingEvent.Operation, _ outcome: SettingEvent.Outcome,
+                        prior: Float? = nil, current: Float? = nil, target: Float? = nil) {
+        let event = SettingEvent(time: now(), setting: .brightness, source: .builtInDisplay,
+            operation: operation, outcome: outcome, key: .brightness,
+            prior: prior.map(Double.init), current: current.map(Double.init), target: target.map(Double.init))
+        if outcome != .verified, let last = lastObservations[operation],
+           last.operation == event.operation, last.outcome == event.outcome, last.prior == event.prior,
+           last.current == event.current, last.target == event.target { return }
+        lastObservations[operation] = event
+        activityLog.record(.setting(event), at: event.time)
     }
 
     private static func valid(_ brightness: Float) -> Bool {

@@ -11,16 +11,17 @@ enum ModeIcon {
 
     static let gridSize: CGFloat = 24
     static let strokeStyle = StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round)
+    static let awakeColor = NSColor(srgbRed: 0.62745, green: 0.51765, blue: 0.90980, alpha: 1)
 
     static func glyph(for mode: Mode) -> Glyph {
         switch mode {
         case .off: return Glyph(filled: CGMutablePath(), stroked: combined(screen, stand))
         case .keepScreenOn: return Glyph(filled: screen, stroked: combined(screen, stand))
-        case .lidClosed: return Glyph(filled: closedLid, stroked: combined(closedLid, rays))
+        case .lidClosed: return Glyph(filled: awakeBolt, stroked: awakeRing)
         }
     }
 
-    /// A template image for the menu bar; the system picks its color.
+    /// Stay Awake keeps its lavender color; other modes follow the menu-bar appearance.
     static func menuBarImage(for mode: Mode) -> NSImage {
         menuBarImages[mode] ?? NSImage()
     }
@@ -32,10 +33,11 @@ enum ModeIcon {
         let image = NSImage(size: NSSize(width: size, height: size), flipped: true) { rect in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
             context.scaleBy(x: rect.width / gridSize, y: rect.height / gridSize)
-            context.setFillColor(.black)
+            let color = mode == .lidClosed ? awakeColor.cgColor : NSColor.black.cgColor
+            context.setFillColor(color)
             context.addPath(glyph.filled)
             context.fillPath()
-            context.setStrokeColor(.black)
+            context.setStrokeColor(color)
             context.setLineWidth(strokeStyle.lineWidth)
             context.setLineCap(.round)
             context.setLineJoin(.round)
@@ -43,7 +45,7 @@ enum ModeIcon {
             context.strokePath()
             return true
         }
-        image.isTemplate = true
+        image.isTemplate = mode != .lidClosed
         image.accessibilityDescription = "MacStayAwake"
         return image
     }
@@ -57,18 +59,26 @@ enum ModeIcon {
 
     private static let stand = lines([(CGPoint(x: 2.5, y: 18.5), CGPoint(x: 21.5, y: 18.5))])
 
-    private static let closedLid = CGPath(
-        roundedRect: CGRect(x: 2.5, y: 13.5, width: 19, height: 5),
-        cornerWidth: 2.5,
-        cornerHeight: 2.5,
-        transform: nil
-    )
+    // Coordinates match the original vector mark in AppIcon.icon/Assets/Logo.svg.
+    private static let awakeRing: CGPath = {
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: 16.6, y: 3.5))
+        path.addCurve(to: CGPoint(x: 4.2, y: 6.8), control1: CGPoint(x: 12.3, y: 1), control2: CGPoint(x: 6.7, y: 2.4))
+        path.addCurve(to: CGPoint(x: 7.7, y: 20), control1: CGPoint(x: 1.4, y: 11.7), control2: CGPoint(x: 3.5, y: 17.5))
+        path.addLine(to: CGPoint(x: 18.8, y: 20))
+        return path
+    }()
 
-    private static let rays = lines([
-        (CGPoint(x: 12, y: 5.5), CGPoint(x: 12, y: 8.5)),
-        (CGPoint(x: 6.8, y: 7.2), CGPoint(x: 8.4, y: 9.6)),
-        (CGPoint(x: 17.2, y: 7.2), CGPoint(x: 15.6, y: 9.6)),
-    ])
+    private static let awakeBolt: CGPath = {
+        let path = CGMutablePath()
+        path.addLines(between: [
+            CGPoint(x: 15.2, y: 5.2), CGPoint(x: 9.5, y: 12), CGPoint(x: 13.3, y: 12),
+            CGPoint(x: 11.7, y: 17.6), CGPoint(x: 20.5, y: 9.3), CGPoint(x: 16.4, y: 9.3),
+            CGPoint(x: 18.4, y: 5.2),
+        ])
+        path.closeSubpath()
+        return path
+    }()
 
     private static func lines(_ segments: [(CGPoint, CGPoint)]) -> CGPath {
         let path = CGMutablePath()
@@ -106,7 +116,8 @@ struct MenuBarIcon: View {
 
     var body: some View {
         Image(nsImage: ModeIcon.menuBarImage(for: controller.mode))
+            .renderingMode(controller.mode == .lidClosed ? .original : .template)
             .accessibilityLabel(Text(verbatim: "MacStayAwake"))
-            .help("Right-click to enable Keep alive")
+            .help(controller.mode == .lidClosed ? Text("Right-click to turn Stay Awake off") : Text("Right-click to turn Stay Awake on"))
     }
 }

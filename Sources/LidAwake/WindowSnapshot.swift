@@ -4,7 +4,7 @@ import LidAwakeShared
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Renders Normal/Keep alive, daily alarms, and watched apps with inert services.
+/// Renders Normal/Stay Awake, daily alarms, and watched apps with inert services.
 /// No helper, display, login-item, network, or saved-setting writes are performed.
 enum WindowSnapshot {
     static let flag = "--render-window"
@@ -376,7 +376,19 @@ private struct LogShot {
         ActivityEntry(time: time(day: 11, hour: 10, minute: 24), event: .sleep),
         ActivityEntry(time: time(day: 12, hour: 7, minute: 58), event: .wake),
         ActivityEntry(time: time(day: 12, hour: 8, minute: 5), event: .modeOn(.lidClosed)),
+        ActivityEntry(time: time(day: 12, hour: 8, minute: 6), event: .setting(SettingEvent(
+            time: time(day: 12, hour: 8, minute: 6), setting: .powerMode, source: .battery,
+            operation: .apply, outcome: .verified, key: .powermode, prior: 0, current: 1, target: 1
+        ))),
+        ActivityEntry(time: time(day: 12, hour: 8, minute: 6), event: .setting(SettingEvent(
+            time: time(day: 12, hour: 8, minute: 6), setting: .brightness, source: .builtInDisplay,
+            operation: .apply, outcome: .verified, key: .brightness, prior: 0.75, current: 0, target: 0
+        ))),
         ActivityEntry(time: time(day: 12, hour: 9, minute: 40), event: .modeOff(.lidClosed, .user)),
+        ActivityEntry(time: time(day: 12, hour: 9, minute: 40), event: .setting(SettingEvent(
+            time: time(day: 12, hour: 9, minute: 40), setting: .powerMode, source: .battery,
+            operation: .restore, outcome: .verified, key: .powermode, prior: 1, current: 0, target: 0
+        ))),
     ]
 
     /// October 2026 in the time zone of this Mac, so the times read the same everywhere.

@@ -311,6 +311,8 @@ public final class LidSession {
         }
     }
 
+    public func takeSettingEvents() -> [SettingEvent] { closedPower.takeSettingEvents() }
+
     public func lastStopReason() -> StopRecord? {
         stopReasons.read()
     }

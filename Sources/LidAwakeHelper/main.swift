@@ -159,6 +159,12 @@ final class Helper: NSObject, HelperProtocol {
         }
     }
 
+    func takeSettingEvents(reply: @escaping (Int, String?, String?) -> Void) {
+        DispatchQueue.main.async {
+            reply(HelperResultCode.ok.rawValue, nil, SettingEventWire.encode(session.takeSettingEvents()))
+        }
+    }
+
     func setScheduledWakes(minutesOfDay: [Int], reply: @escaping (Int, String?) -> Void) {
         perform(reply: reply) { wakeScheduler.set(minutesOfDay: minutesOfDay) }
     }

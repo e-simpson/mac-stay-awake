@@ -18,7 +18,7 @@ final class ActivityRowTests: XCTestCase {
     func testModeOn() {
         XCTAssertEqual(
             row(.modeOn(.lidClosed)),
-            ActivityRow(title: "Keep alive turned on", detail: "By you", symbol: .modeOn)
+            ActivityRow(title: "Stay Awake turned on", detail: "By you", symbol: .modeOn)
         )
         XCTAssertEqual(
             row(.modeOn(.keepScreenOn)),
@@ -29,7 +29,7 @@ final class ActivityRowTests: XCTestCase {
     func testModeOff() {
         XCTAssertEqual(
             row(.modeOff(.lidClosed, .user)),
-            ActivityRow(title: "Keep alive turned off", detail: "By you", symbol: .modeOff)
+            ActivityRow(title: "Stay Awake turned off", detail: "By you", symbol: .modeOff)
         )
         XCTAssertEqual(
             row(.modeOff(.keepScreenOn, .user)),
@@ -153,15 +153,15 @@ final class ActivityRowTests: XCTestCase {
         )
         XCTAssertEqual(
             row(.modeOnBySchedule(.lidClosed)),
-            ActivityRow(title: "Keep alive turned on", detail: "On schedule", symbol: .modeOn)
+            ActivityRow(title: "Stay Awake turned on", detail: "On schedule", symbol: .modeOn)
         )
         XCTAssertEqual(
             row(.modeSkipped(.lidClosed, .notOnPower)),
-            ActivityRow(title: "Keep alive not turned on", detail: "Not on power", symbol: .skipped)
+            ActivityRow(title: "Stay Awake not turned on", detail: "Not on power", symbol: .skipped)
         )
         XCTAssertEqual(
             row(.modeSkipped(.lidClosed, .error(" The helper did not respond.\n"))),
-            ActivityRow(title: "Keep alive not turned on", detail: "The helper did not respond.", symbol: .skipped)
+            ActivityRow(title: "Stay Awake not turned on", detail: "The helper did not respond.", symbol: .skipped)
         )
         XCTAssertEqual(row(.modeSkipped(.lidClosed, .error(""))).detail, "Something went wrong")
     }
@@ -169,7 +169,7 @@ final class ActivityRowTests: XCTestCase {
     func testMissedWake() {
         XCTAssertEqual(
             row(.modeSkipped(.lidClosed, .missed)),
-            ActivityRow(title: "Keep alive not turned on", detail: "Mac was on battery or turned off", symbol: .skipped)
+            ActivityRow(title: "Stay Awake not turned on", detail: "Mac was on battery or turned off", symbol: .skipped)
         )
     }
 
@@ -197,6 +197,7 @@ final class ActivityRowTests: XCTestCase {
 
     func testSymbolShapesAndColors() {
         let expected: [ActivitySymbol: (String, Bool)] = [
+            .setting: ("slider.horizontal.3", false),
             .modeOn: ("circle.fill", true),
             .modeOff: ("circle", false),
             .skipped: ("circle.slash", false),

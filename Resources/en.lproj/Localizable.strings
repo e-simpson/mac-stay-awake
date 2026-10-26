@@ -1,7 +1,7 @@
 /* Modes */
 "Off" = "Off";
 "Keep Screen On" = "Keep Screen On";
-"Keep alive" = "Keep alive";
+"Stay Awake" = "Stay Awake";
 "The Mac sleeps as usual." = "The Mac sleeps as usual.";
 "For stepping away from the desk. Closing the lid still puts the Mac to sleep." = "For stepping away from the desk. Closing the lid still puts the Mac to sleep.";
 "For the road. Keeps working with the lid shut or the screen locked." = "For the road. Keeps working with the lid shut or the screen locked.";
@@ -49,7 +49,7 @@
 "Wake at" = "Wake at";
 "Every day, on power only" = "Every day, on power only";
 "Could not set the wake" = "Could not set the wake";
-"Lock screen when the lid closes" = "Lock screen when the lid closes";
+"Lock when closed" = "Lock when closed";
 "Screen lock is not available on this macOS version." = "Screen lock is not available on this macOS version.";
 "Launch at login" = "Launch at login";
 "Turn it on in System Settings > General > Login Items & Extensions." = "Turn it on in System Settings > General > Login Items & Extensions.";
@@ -69,10 +69,10 @@
 /* Helper messages */
 "Permission needed" = "Permission needed";
 "Allow MacStayAwake in System Settings > General > Login Items & Extensions. The mode turns on as soon as you do." = "Allow MacStayAwake in System Settings > General > Login Items & Extensions. The mode turns on as soon as you do.";
-"Allow MacStayAwake in System Settings > General > Login Items & Extensions, then choose Keep alive again." = "Allow MacStayAwake in System Settings > General > Login Items & Extensions, then choose Keep alive again.";
+"Allow MacStayAwake in System Settings > General > Login Items & Extensions, then choose Stay Awake again." = "Allow MacStayAwake in System Settings > General > Login Items & Extensions, then choose Stay Awake again.";
 "Allow MacStayAwake in System Settings > General > Login Items & Extensions." = "Allow MacStayAwake in System Settings > General > Login Items & Extensions.";
 "Move MacStayAwake to Applications" = "Move MacStayAwake to Applications";
-"Keep alive needs the app in the Applications folder." = "Keep alive needs the app in the Applications folder.";
+"Stay Awake needs the app in the Applications folder." = "Stay Awake needs the app in the Applications folder.";
 "MacStayAwake must be in /Applications to install the helper." = "MacStayAwake must be in /Applications to install the helper.";
 "The helper did not start" = "The helper did not start";
 "Install the helper to run with the lid closed." = "Install the helper to run with the lid closed.";
@@ -123,8 +123,8 @@
 "Last 200 events · kept only on this Mac" = "Last 200 events · kept only on this Mac";
 "Clear" = "Clear";
 "No events yet" = "No events yet";
-"Keep alive turned on" = "Keep alive turned on";
-"Keep alive turned off" = "Keep alive turned off";
+"Stay Awake turned on" = "Stay Awake turned on";
+"Stay Awake turned off" = "Stay Awake turned off";
 "Keep Screen On turned on" = "Keep Screen On turned on";
 "Keep Screen On turned off" = "Keep Screen On turned off";
 "Paused" = "Paused";
@@ -134,7 +134,7 @@
 "Mac woke up" = "Mac woke up";
 "By you" = "By you";
 "On schedule" = "On schedule";
-"Keep alive not turned on" = "Keep alive not turned on";
+"Stay Awake not turned on" = "Stay Awake not turned on";
 "Not on power" = "Not on power";
 "Mac was on battery or turned off" = "Mac was on battery or turned off";
 "The timer ended after %@." = "The timer ended after %@.";
@@ -156,3 +156,33 @@
 "Not open" = "Not open";
 "Add Other App…" = "Add Other App…";
 "Done" = "Done";
+
+"Built-in display brightness" = "Built-in display brightness";
+
+"Battery power mode" = "Battery power mode";
+
+"AC power mode" = "AC power mode";
+
+"Power mode" = "Power mode";
+
+"Applied and verified" = "Applied and verified";
+
+"Restored and verified" = "Restored and verified";
+
+"Already at target" = "Already at target";
+
+"External change preserved" = "External change preserved";
+
+"Recovery pending" = "Recovery pending";
+
+"Change failed" = "Change failed";
+
+"Unknown" = "Unknown";
+
+"Automatic" = "Automatic";
+
+"Low Power" = "Low Power";
+
+"High Power" = "High Power";
+
+"Previous: %@ · Current: %@ · Target: %@" = "Previous: %@ · Current: %@ · Target: %@";

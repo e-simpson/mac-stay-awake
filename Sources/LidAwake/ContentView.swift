@@ -201,7 +201,7 @@ struct ContentView: View {
                     Task { await helperSetup.select(.lidClosed) }
                 } controls: {
                     ValueMenu(
-                        label: "Keep alive duration",
+                        label: "Stay Awake duration",
                         selection: Binding(
                             get: { preferences.timerEnabled ? preferences.timerSeconds : 0 },
                             set: { seconds in
@@ -311,8 +311,8 @@ struct ContentView: View {
 
     private func lockRow(minHeight: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            SettingRow(title: "Lock screen when the lid closes", isOn: $preferences.lockOnLidCloseEnabled, minHeight: minHeight) {
-                SwitchToggle(title: "Lock screen when the lid closes", isOn: $preferences.lockOnLidCloseEnabled)
+            SettingRow(title: "Lock when closed", isOn: $preferences.lockOnLidCloseEnabled, minHeight: minHeight) {
+                SwitchToggle(title: "Lock when closed", isOn: $preferences.lockOnLidCloseEnabled)
             }
             if let notice = controller.screenLockNotice {
                 Text(notice)
@@ -344,7 +344,7 @@ private extension Mode {
         switch self {
         case .off: return "Normal"
         case .keepScreenOn: return "Keep Screen On"
-        case .lidClosed: return "Keep alive"
+        case .lidClosed: return "Stay Awake"
         }
     }
 

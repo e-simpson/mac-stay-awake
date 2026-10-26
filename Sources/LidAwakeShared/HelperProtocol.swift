@@ -47,6 +47,8 @@ import Foundation
     /// Replies with a result code, an error message and the idle events collected since the last call,
     /// written by `IdleEventWire`. The helper keeps no copy of what it hands over.
     func takeIdleEvents(reply: @escaping (Int, String?, String?) -> Void)
+    /// Hands over bounded setting observations collected by the authenticated helper.
+    func takeSettingEvents(reply: @escaping (Int, String?, String?) -> Void)
     /// Keeps two occurrences per daily local time (0 to 1439), at most 16 unique times.
     /// Empty cancels only our events. Replies with a result code and an error message.
     func setScheduledWakes(minutesOfDay: [Int], reply: @escaping (Int, String?) -> Void)

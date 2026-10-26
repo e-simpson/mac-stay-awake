@@ -3,6 +3,7 @@ import LidAwakeShared
 
 /// The symbol drawn before an entry in the log window.
 public enum ActivitySymbol: Equatable, CaseIterable {
+    case setting
     case modeOn
     case modeOff
     /// The mode was not turned on.
@@ -16,6 +17,7 @@ public enum ActivitySymbol: Equatable, CaseIterable {
 
     public var systemName: String {
         switch self {
+        case .setting: return "slider.horizontal.3"
         case .modeOn: return "circle.fill"
         case .modeOff: return "circle"
         case .skipped: return "circle.slash"
@@ -32,7 +34,7 @@ public enum ActivitySymbol: Equatable, CaseIterable {
     public var usesAccent: Bool {
         switch self {
         case .modeOn, .resumed, .busy: return true
-        case .modeOff, .skipped, .paused, .idle, .sleep, .wake: return false
+        case .setting, .modeOff, .skipped, .paused, .idle, .sleep, .wake: return false
         }
     }
 }
@@ -51,14 +53,16 @@ public struct ActivityRow: Equatable {
 
     public init(_ entry: ActivityEntry) {
         switch entry.event {
+        case .setting(let event):
+            self = Self.settingRow(event)
         case .modeOn(let mode):
             self.init(title: Self.modeOnTitle(mode), detail: String(localized: "By you"), symbol: .modeOn)
         case .modeOnBySchedule(let mode):
             self.init(title: Self.modeOnTitle(mode), detail: String(localized: "On schedule"), symbol: .modeOn)
         case .modeSkipped(_, let reason):
-            // Only Keep alive is ever turned on by schedule.
+            // Only Stay Awake is ever turned on by schedule.
             self.init(
-                title: String(localized: "Keep alive not turned on"),
+                title: String(localized: "Stay Awake not turned on"),
                 detail: Self.text(for: reason),
                 symbol: .skipped
             )
@@ -104,18 +108,49 @@ public struct ActivityRow: Equatable {
         }
     }
 
-    // Off is never turned on or off by itself, so it shares the wording of Keep alive.
+    private static func settingRow(_ event: SettingEvent) -> ActivityRow {
+        let title: String
+        switch event.source {
+        case .builtInDisplay: title = String(localized: "Built-in display brightness")
+        case .battery: title = String(localized: "Battery power mode")
+        case .ac: title = String(localized: "AC power mode")
+        case .unknown: title = String(localized: "Power mode")
+        }
+        let outcome: String
+        switch event.outcome {
+        case .verified:
+            outcome = event.operation == .apply ? String(localized: "Applied and verified") : String(localized: "Restored and verified")
+        case .alreadyAtTarget: outcome = String(localized: "Already at target")
+        case .externalChangePreserved: outcome = String(localized: "External change preserved")
+        case .pending: outcome = String(localized: "Recovery pending")
+        case .failed: outcome = String(localized: "Change failed")
+        }
+        func value(_ number: Double?) -> String {
+            guard let number else { return String(localized: "Unknown") }
+            if event.setting == .brightness { return String(localized: "\(Int((number * 100).rounded()))%") }
+            switch Int(number) {
+            case 0: return event.key == .lowpowermode ? String(localized: "Off") : String(localized: "Automatic")
+            case 1: return String(localized: "Low Power")
+            default: return String(localized: "High Power")
+            }
+        }
+        let values = String(localized: "Previous: \(value(event.prior)) · Current: \(value(event.current)) · Target: \(value(event.target))")
+        let detail = [outcome, values, event.detail].compactMap { $0 }.joined(separator: " · ")
+        return ActivityRow(title: title, detail: detail, symbol: .setting)
+    }
+
+    // Off is never turned on or off by itself, so it shares the wording of Stay Awake.
     private static func modeOnTitle(_ mode: Mode) -> String {
         switch mode {
         case .keepScreenOn: return String(localized: "Keep Screen On turned on")
-        case .lidClosed, .off: return String(localized: "Keep alive turned on")
+        case .lidClosed, .off: return String(localized: "Stay Awake turned on")
         }
     }
 
     private static func modeOffTitle(_ mode: Mode) -> String {
         switch mode {
         case .keepScreenOn: return String(localized: "Keep Screen On turned off")
-        case .lidClosed, .off: return String(localized: "Keep alive turned off")
+        case .lidClosed, .off: return String(localized: "Stay Awake turned off")
         }
     }
 

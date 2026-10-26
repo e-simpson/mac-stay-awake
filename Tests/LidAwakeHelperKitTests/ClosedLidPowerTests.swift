@@ -20,6 +20,7 @@ final class ClosedLidPowerTests: XCTestCase {
         var failReadAfterWrite = false
         var appliesWrites = true
         var beforeWrite: (() -> Void)?
+        var beforeRead: (() -> Void)?
         var calls: [(String, [String])] = []
 
         var writes: [[String]] { calls.map(\.1).filter { $0.first != "-g" } }
@@ -27,6 +28,7 @@ final class ClosedLidPowerTests: XCTestCase {
         func run(_ path: String, _ arguments: [String], timeout: TimeInterval) throws -> CommandResult {
             calls.append((path, arguments))
             if arguments == ["-g", "custom"] {
+                beforeRead?()
                 guard !readFailure else { return CommandResult(status: 8, output: "") }
                 return CommandResult(status: 0, output: rawOutput ?? "Battery Power:\n \(key) \(modes["-b"]!)\nAC Power:\n \(key) \(modes["-c"]!)\n")
             }
@@ -52,6 +54,93 @@ final class ClosedLidPowerTests: XCTestCase {
 
     override func tearDownWithError() throws {
         try FileManager.default.removeItem(at: directory)
+    }
+
+    func testEventsDescribeVerifiedWritesAndEachPartialRestore() throws {
+        let pmset = Pmset()
+        let time = Date(timeIntervalSince1970: 1234)
+        let power = ClosedLidPower(runner: pmset, directory: directory, now: { time })
+        try power.update(closed: true, source: .battery)
+        try power.update(closed: true, source: .battery)
+        try power.update(closed: true, source: .ac)
+        let applied = power.takeSettingEvents()
+        XCTAssertEqual(applied.map(\.outcome), [.verified, .verified])
+        XCTAssertEqual(applied.map(\.source), [.battery, .ac])
+        XCTAssertEqual(applied.map(\.prior), [0, 2])
+        XCTAssertEqual(applied.map(\.current), [1, 1])
+        XCTAssertEqual(applied.map(\.time), [time, time])
+        pmset.failingWriteScope = "-b"
+        pmset.modes["-c"] = 0
+        XCTAssertThrowsError(try power.restore())
+        let partial = power.takeSettingEvents()
+        XCTAssertEqual(partial.map(\.outcome), [.pending, .externalChangePreserved])
+        XCTAssertEqual(partial.map(\.source), [.battery, .ac])
+        XCTAssertEqual(partial.last?.current, 0)
+        XCTAssertThrowsError(try power.restore())
+        XCTAssertTrue(power.takeSettingEvents().isEmpty, "Unchanged pending recovery is not repeated")
+        pmset.failingWriteScope = nil
+        try power.restore()
+        XCTAssertEqual(power.takeSettingEvents().map(\.outcome), [.verified])
+    }
+
+    func testIgnoredWritesAreNotVerifiedAndAlreadyLowIsNotOwned() throws {
+        let pmset = Pmset()
+        pmset.appliesWrites = false
+        let power = ClosedLidPower(runner: pmset, directory: directory)
+        XCTAssertThrowsError(try power.update(closed: true, source: .battery))
+        let failed = power.takeSettingEvents()
+        XCTAssertEqual(failed.map(\.outcome), [.failed])
+        XCTAssertEqual(failed.first?.current, 0)
+        try power.restore()
+        XCTAssertEqual(power.takeSettingEvents().map(\.outcome), [.alreadyAtTarget])
+        pmset.modes["-b"] = 1
+        try power.update(closed: true, source: .battery)
+        try power.update(closed: true, source: .battery)
+        XCTAssertEqual(power.takeSettingEvents().map(\.outcome), [.alreadyAtTarget])
+        XCTAssertFalse(power.hasPendingRestore)
+    }
+
+    func testVerifiedWriteSurvivesRecoveryJournalSaveFailureInEvents() throws {
+        let pmset = Pmset()
+        let power = ClosedLidPower(runner: pmset, directory: directory)
+        let journal = directory.appendingPathComponent("closed-lid-power.json")
+        pmset.beforeWrite = { try! FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: journal.path) }
+        XCTAssertThrowsError(try power.update(closed: true, source: .battery))
+        let events = power.takeSettingEvents()
+        XCTAssertEqual(events.map(\.outcome), [.verified, .pending])
+        XCTAssertEqual(events.map(\.current), [1, 1])
+        XCTAssertEqual(pmset.modes["-b"], 1)
+        XCTAssertTrue(power.hasPendingRestore)
+    }
+
+    func testObservedTargetAndFailedRecoveryRecordNeverClaimAChangeFailed() throws {
+        let pmset = Pmset()
+        pmset.failReadAfterWrite = true
+        let power = ClosedLidPower(runner: pmset, directory: directory)
+        XCTAssertThrowsError(try power.update(closed: true, source: .battery))
+        _ = power.takeSettingEvents()
+        pmset.readFailure = false
+        let journal = directory.appendingPathComponent("closed-lid-power.json")
+        // Make the next save fail after the existing unverified record is read and target observed.
+        pmset.beforeRead = {
+            try! FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: journal.path)
+        }
+        XCTAssertThrowsError(try power.update(closed: true, source: .battery))
+        XCTAssertEqual(power.takeSettingEvents().map(\.outcome), [.alreadyAtTarget, .pending])
+    }
+
+    func testEventQueueKeepsOnlyNewestBoundedObservations() throws {
+        let pmset = Pmset()
+        let power = ClosedLidPower(runner: pmset, directory: directory)
+        for _ in 0..<70 {
+            try power.update(closed: true, source: .battery)
+            try power.restore()
+        }
+        let events = power.takeSettingEvents()
+        XCTAssertEqual(events.count, SettingEventWire.maximumCount)
+        XCTAssertEqual(events.last?.operation, .restore)
+        XCTAssertTrue(events.allSatisfy { $0.outcome == .verified })
+        XCTAssertTrue(power.takeSettingEvents().isEmpty)
     }
 
     func testLegacyHighPowerIsRejectedBeforeAnyChanges() throws {

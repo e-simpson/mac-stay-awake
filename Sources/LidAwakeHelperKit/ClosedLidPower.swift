@@ -6,6 +6,11 @@ public protocol ClosedLidPowerManaging {
     var hasPendingRestore: Bool { get }
     func update(closed: Bool, source: PowerSource) throws
     func restore() throws
+    func takeSettingEvents() -> [SettingEvent]
+}
+
+extension ClosedLidPowerManaging {
+    public func takeSettingEvents() -> [SettingEvent] { [] }
 }
 
 public enum ClosedLidPowerError: Error, Equatable, LocalizedError {
@@ -55,10 +60,14 @@ public final class ClosedLidPower: ClosedLidPowerManaging {
     private static let journalName = "closed-lid-power.json"
     private let runner: CommandRunning
     private let directory: URL
+    private let now: () -> Date
+    private var events: [SettingEvent] = []
+    private var lastObservations: [String: SettingEvent] = [:]
 
-    public init(runner: CommandRunning = ProcessRunner(), directory: URL = FileOwnershipMarker.defaultDirectory) {
+    public init(runner: CommandRunning = ProcessRunner(), directory: URL = FileOwnershipMarker.defaultDirectory, now: @escaping () -> Date = Date.init) {
         self.runner = runner
         self.directory = directory
+        self.now = now
     }
 
     /// Invalid or inaccessible records are pending, so startup cannot silently discard recovery.
@@ -66,59 +75,132 @@ public final class ClosedLidPower: ClosedLidPowerManaging {
         do { return try readJournal() != nil } catch { return true }
     }
 
+    public func takeSettingEvents() -> [SettingEvent] {
+        defer { events.removeAll(keepingCapacity: true) }
+        return events
+    }
+
+    private func record(scope: Scope?, key: Key?, operation: SettingEvent.Operation,
+                        outcome: SettingEvent.Outcome, prior: Int? = nil, current: Int? = nil,
+                        target: Int? = nil, detail: String? = nil) {
+        let source: SettingEvent.Source = scope == .battery ? .battery : scope == .ac ? .ac : .unknown
+        let event = SettingEvent(time: now(), setting: .powerMode, source: source,
+            operation: operation, outcome: outcome, key: key.flatMap { SettingEvent.Key(rawValue: $0.rawValue) },
+            prior: prior.map(Double.init), current: current.map(Double.init), target: target.map(Double.init), detail: detail)
+        let identity = "\(source.rawValue):\(operation.rawValue)"
+        if outcome != .verified, let last = lastObservations[identity],
+           last.outcome == event.outcome, last.key == event.key, last.prior == event.prior,
+           last.current == event.current, last.target == event.target, last.detail == event.detail { return }
+        lastObservations[identity] = event
+        events.append(event)
+        if events.count > SettingEventWire.maximumCount { events.removeFirst(events.count - SettingEventWire.maximumCount) }
+    }
+
     public func update(closed: Bool, source: PowerSource) throws {
         guard closed else { return try restore() }
-        var journal = try readJournal() ?? Journal(version: 1, touches: [])
-        let scope: Scope
-        switch source {
-        case .battery: scope = .battery
-        case .ac: scope = .ac
-        case .unknown: throw ClosedLidPowerError.unknownSource
-        }
-        let index: Int
-        if let existing = journal.touches.firstIndex(where: { $0.scope == scope }) {
-            index = existing
-            // Never reapply over a later external change after a verified application.
-            if journal.touches[index].applied { return }
-            let touch = journal.touches[index]
-            let current = try read(scope: scope, key: touch.key)
-            if current == 1 {
-                journal.touches[index].applied = true
+        let scope: Scope? = source == .battery ? .battery : source == .ac ? .ac : nil
+        var key: Key?
+        var prior: Int?
+        var current: Int?
+        do {
+            var journal = try readJournal() ?? Journal(version: 1, touches: [])
+            guard let scope else { throw ClosedLidPowerError.unknownSource }
+            let index: Int
+            if let existing = journal.touches.firstIndex(where: { $0.scope == scope }) {
+                index = existing
+                // Never reapply over a later external change after a verified application.
+                if journal.touches[index].applied { return }
+                let touch = journal.touches[index]
+                key = touch.key
+                prior = touch.original
+                current = try read(scope: scope, key: touch.key)
+                if current == 1 {
+                    // Observed at target, but this run did not verify a write.
+                    record(scope: scope, key: key, operation: .apply, outcome: .alreadyAtTarget,
+                           prior: prior, current: current, target: 1)
+                    journal.touches[index].applied = true
+                    try saveJournal(journal)
+                    return
+                }
+                guard current == touch.original else {
+                    record(scope: scope, key: key, operation: .apply, outcome: .externalChangePreserved,
+                           prior: prior, current: current, target: 1)
+                    return
+                }
+            } else {
+                let settings = try readSettings(scope: scope)
+                guard let selected = settings[.modern] != nil ? Key.modern : settings[.legacy] != nil ? .legacy : nil,
+                      let original = settings[selected] else { throw ClosedLidPowerError.unreadable }
+                key = selected
+                prior = original
+                current = original
+                guard original != 1 else {
+                    record(scope: scope, key: key, operation: .apply, outcome: .alreadyAtTarget,
+                           prior: prior, current: current, target: 1)
+                    return
+                }
+                index = journal.touches.count
+                journal.touches.append(Touch(scope: scope, key: selected, original: original, applied: false))
                 try saveJournal(journal)
-                return
             }
-            guard current == touch.original else { return }
-        } else {
-            let settings = try readSettings(scope: scope)
-            guard let key = settings[.modern] != nil ? Key.modern : settings[.legacy] != nil ? .legacy : nil,
-                  let original = settings[key] else { throw ClosedLidPowerError.unreadable }
-            // An existing Low Power choice belongs to the user and needs no recovery record.
-            guard original != 1 else { return }
-            index = journal.touches.count
-            journal.touches.append(Touch(scope: scope, key: key, original: original, applied: false))
+            current = nil
+            try write(scope: scope, key: journal.touches[index].key, value: 1, observed: &current)
+            record(scope: scope, key: key, operation: .apply, outcome: .verified,
+                   prior: prior, current: current, target: 1)
+            journal.touches[index].applied = true
             try saveJournal(journal)
+        } catch {
+            record(scope: scope, key: key, operation: .apply, outcome: current == 1 ? .pending : .failed,
+                   prior: prior, current: current, target: 1,
+                   detail: current == 1 ? "Recovery record update failed: \(error.localizedDescription)" : error.localizedDescription)
+            throw error
         }
-        try write(scope: scope, key: journal.touches[index].key, value: 1)
-        journal.touches[index].applied = true
-        try saveJournal(journal)
     }
 
     public func restore() throws {
-        guard let journal = try readJournal() else { return }
+        let journal: Journal
+        do {
+            guard let saved = try readJournal() else { return }
+            journal = saved
+        } catch {
+            record(scope: nil, key: nil, operation: .restore, outcome: .pending, detail: error.localizedDescription)
+            throw error
+        }
         var remaining: [Touch] = []
         var firstError: Error?
         for touch in journal.touches {
+            var current: Int?
+            var prior: Int?
             do {
+                current = try read(scope: touch.scope, key: touch.key)
+                prior = current
                 // A different current value is a newer external choice, not ours to overwrite.
-                if try read(scope: touch.scope, key: touch.key) == 1 {
-                    try write(scope: touch.scope, key: touch.key, value: touch.original)
+                if current == 1 {
+                    current = nil
+                    try write(scope: touch.scope, key: touch.key, value: touch.original, observed: &current)
+                    record(scope: touch.scope, key: touch.key, operation: .restore, outcome: .verified,
+                           prior: prior, current: current, target: touch.original)
+                } else {
+                    record(scope: touch.scope, key: touch.key, operation: .restore,
+                           outcome: current == touch.original ? .alreadyAtTarget : .externalChangePreserved,
+                           prior: prior, current: current, target: touch.original)
                 }
             } catch {
                 remaining.append(touch)
+                record(scope: touch.scope, key: touch.key, operation: .restore, outcome: .pending,
+                       prior: prior, current: current, target: touch.original, detail: error.localizedDescription)
                 if firstError == nil { firstError = error }
             }
         }
-        try saveJournal(Journal(version: 1, touches: remaining))
+        do {
+            try saveJournal(Journal(version: 1, touches: remaining))
+        } catch {
+            for touch in journal.touches {
+                record(scope: touch.scope, key: touch.key, operation: .restore, outcome: .pending,
+                       target: touch.original, detail: "Recovery record update failed: \(error.localizedDescription)")
+            }
+            throw error
+        }
         if let firstError { throw firstError }
     }
 
@@ -133,9 +215,10 @@ public final class ClosedLidPower: ClosedLidPowerManaging {
         return value
     }
 
-    private func write(scope: Scope, key: Key, value: Int) throws {
+    private func write(scope: Scope, key: Key, value: Int, observed: inout Int?) throws {
         _ = try run([scope.rawValue, key.rawValue, String(value)])
-        guard try read(scope: scope, key: key) == value else { throw ClosedLidPowerError.notApplied }
+        observed = try read(scope: scope, key: key)
+        guard observed == value else { throw ClosedLidPowerError.notApplied }
     }
 
     private func readSettings(scope: Scope) throws -> [Key: Int] {

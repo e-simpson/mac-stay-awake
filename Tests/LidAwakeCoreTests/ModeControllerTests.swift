@@ -236,6 +236,12 @@ private final class FakeIdleEvents: IdleEventFetching {
     }
 }
 
+@MainActor
+private final class FakeSettingEvents: SettingEventFetching {
+    var fetch: () async throws -> [SettingEvent] = { [] }
+    func takeSettingEvents() async throws -> [SettingEvent] { try await fetch() }
+}
+
 private final class FakeTime {
     var now: TimeInterval = 1000
 }
@@ -261,6 +267,7 @@ final class ModeControllerTests: XCTestCase {
     private let locker = FakeScreenLocker()
     private let time = FakeTime()
     private let log = FakeActivityLog()
+    private let settingEvents = FakeSettingEvents()
     private lazy var idleEvents = FakeIdleEvents(sessions: sessions)
     private let suiteName = "ModeControllerTests-\(UUID().uuidString)"
     private lazy var preferences: SafetyPreferences = {
@@ -291,12 +298,112 @@ final class ModeControllerTests: XCTestCase {
             screenLocker: locker,
             activityLog: log,
             idleEvents: idleEvents,
+            settingEvents: settingEvents,
             brightness: brightness,
             leaseSeconds: 120,
             renewalSleep: renewalSleep ?? { try await Task.sleep(nanoseconds: 3_600_000_000_000) },
             timerCheckSleep: { try await Task.sleep(nanoseconds: 3_600_000_000_000) },
             now: { time.now }
         )
+    }
+
+    func testSuspendedSettingFetchCannotDelayRecoveryOrModeTransitions() async throws {
+        let controller = makeController()
+        try await controller.select(.lidClosed)
+        await controller.refreshSettingEvents()
+        var resume: CheckedContinuation<[SettingEvent], Never>?
+        var calls = 0
+        settingEvents.fetch = {
+            calls += 1
+            if calls == 1 { return await withCheckedContinuation { resume = $0 } }
+            return []
+        }
+        defer { resume?.resume(returning: []) }
+        let priorRestores = brightness.restores
+        var finished = false
+        let leaving = Task {
+            try await controller.select(.off)
+            finished = true
+        }
+        await settle { resume != nil }
+        await settle { finished }
+        XCTAssertTrue(finished, "A suspended observation fetch must not block ending the mode")
+        XCTAssertGreaterThan(brightness.restores, priorRestores, "Display recovery must finish before event delivery")
+        XCTAssertFalse(controller.isBusy)
+        if !finished {
+            resume?.resume(returning: [])
+            resume = nil
+            try await leaving.value
+            return
+        }
+        try await leaving.value
+
+        // A fetch already in flight must not block any other lifecycle path either.
+        try await controller.select(.lidClosed)
+        sessions.renewError = HelperError.timeout
+        sessions.endError = HelperError.helper(.powerModeFailed, "Recovery pending")
+        let beforeFailedRenewal = brightness.restores
+        await controller.renew()
+        XCTAssertEqual(controller.mode, .off)
+        XCTAssertGreaterThan(brightness.restores, beforeFailedRenewal)
+        sessions.startError = HelperError.timeout
+        let beforeRollback = brightness.restores
+        do { try await controller.select(.lidClosed); XCTFail("Start must fail") } catch {}
+        XCTAssertGreaterThan(brightness.restores, beforeRollback)
+        XCTAssertFalse(controller.isBusy)
+        sessions.endError = nil
+        await controller.clearLeftover()
+        let canQuit = await controller.prepareToQuit()
+        XCTAssertTrue(canQuit)
+        XCTAssertEqual(calls, 1, "In-flight requests must be coalesced")
+        resume?.resume(returning: [])
+        resume = nil
+        await controller.refreshSettingEvents()
+        XCTAssertEqual(calls, 2, "Changes made during a fetch need one final drain")
+    }
+
+    func testSettingEventsAreDrainedAfterFailedRollbackAndCleanup() async throws {
+        let controller = makeController()
+        let event = SettingEvent(time: Date(timeIntervalSince1970: 1234), setting: .powerMode,
+            source: .battery, operation: .restore, outcome: .pending, key: .powermode, target: 0)
+        var delivered = false
+        var requests: [[String]] = []
+        settingEvents.fetch = {
+            requests.append(self.sessions.calls)
+            guard self.sessions.calls.contains("end"), !delivered else { return [] }
+            delivered = true
+            return [event]
+        }
+        sessions.startError = HelperError.timeout
+        sessions.endError = HelperError.helper(.powerModeFailed, "Recovery pending")
+        do { try await controller.select(.lidClosed); XCTFail("Start must fail") } catch {}
+        await controller.refreshSettingEvents()
+        XCTAssertTrue(delivered)
+        XCTAssertTrue(requests.allSatisfy { $0 == ["start 120", "end"] },
+                      "Cleanup must begin before best-effort observation delivery")
+        XCTAssertEqual(log.records.first(where: { $0.event == .setting(event) })?.time, event.time)
+        XCTAssertEqual(controller.mode, .off)
+        XCTAssertNotNil(controller.message)
+
+        sessions.startError = nil
+        sessions.endError = nil
+        delivered = false
+        sessions.session = .ours
+        await controller.clearLeftover()
+        await controller.refreshSettingEvents()
+        XCTAssertTrue(delivered)
+    }
+
+    func testSettingEventDeliveryFailureDoesNotEndSession() async throws {
+        settingEvents.fetch = { throw HelperError.timeout }
+        let controller = makeController()
+        try await controller.select(.lidClosed)
+        await controller.renew()
+        XCTAssertEqual(controller.mode, .lidClosed)
+        XCTAssertNil(controller.message)
+        try await controller.select(.off)
+        XCTAssertEqual(controller.mode, .off)
+        XCTAssertNil(controller.message)
     }
 
     func testQuitWaitsForPendingDisplayRecoveryEvenInNormalMode() async {

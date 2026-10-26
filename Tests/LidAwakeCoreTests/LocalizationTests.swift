@@ -93,7 +93,7 @@ final class LocalizationTests: XCTestCase {
         let glossary: [(String, String, String)] = [
             ("Off", "Aus", "Выкл."),
             ("Keep Screen On", "Bildschirm anlassen", "Не гасить экран"),
-            ("Keep alive", "Mit geschlossenem Deckel", "С закрытой крышкой"),
+            ("Stay Awake", "Mit geschlossenem Deckel", "С закрытой крышкой"),
             ("Safety", "Schutz", "Защита"),
             ("Timer", "Timer", "Таймер"),
             ("Safety · lid closed only", "Schutz · nur bei geschlossenem Deckel", "Защита · только с закрытой крышкой"),
@@ -105,7 +105,7 @@ final class LocalizationTests: XCTestCase {
             ("Counts from the moment you switch on", "Ab dem Einschalten", "Отсчёт с момента включения"),
             ("Only while charging", "Nur am Netzteil", "Только от зарядки"),
             ("Turn off after", "Ausschalten nach", "Выключить через"),
-            ("Lock screen when the lid closes", "Beim Zuklappen sperren", "Блокировать при закрытии крышки"),
+            ("Lock when closed", "Beim Zuklappen sperren", "Блокировать при закрытии крышки"),
             ("Launch at login", "Bei der Anmeldung öffnen", "Запускать при входе"),
             ("Appearance", "Erscheinungsbild", "Оформление"),
             ("Glass", "Glas", "Стекло"),
@@ -204,12 +204,12 @@ final class LocalizationTests: XCTestCase {
             ],
             "Clear": ["de": "Löschen", "ru": "Очистить", "zh-Hans": "清除"],
             "No events yet": ["de": "Noch keine Ereignisse", "ru": "Событий пока нет", "zh-Hans": "暂无记录"],
-            "Keep alive turned on": [
+            "Stay Awake turned on": [
                 "de": "„Mit geschlossenem Deckel“ eingeschaltet",
                 "ru": "Режим «С закрытой крышкой» включён",
                 "zh-Hans": "已开启“合盖运行”",
             ],
-            "Keep alive turned off": [
+            "Stay Awake turned off": [
                 "de": "„Mit geschlossenem Deckel“ ausgeschaltet",
                 "ru": "Режим «С закрытой крышкой» выключен",
                 "zh-Hans": "已关闭“合盖运行”",

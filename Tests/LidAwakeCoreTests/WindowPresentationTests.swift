@@ -152,7 +152,7 @@ final class WindowMessageTests: XCTestCase {
         XCTAssertEqual(message?.title, "Permission needed")
         XCTAssertEqual(
             message?.text,
-            "Allow MacStayAwake in System Settings > General > Login Items & Extensions, then choose Keep alive again."
+            "Allow MacStayAwake in System Settings > General > Login Items & Extensions, then choose Stay Awake again."
         )
         XCTAssertEqual(message?.action, .openSystemSettings)
         XCTAssertEqual(message?.actionTitle, "Open System Settings")
@@ -162,7 +162,7 @@ final class WindowMessageTests: XCTestCase {
         let message = only(helper: .moveToApplications)
         XCTAssertEqual(message?.kind, .actionNeeded)
         XCTAssertEqual(message?.title, "Move MacStayAwake to Applications")
-        XCTAssertEqual(message?.text, "Keep alive needs the app in the Applications folder.")
+        XCTAssertEqual(message?.text, "Stay Awake needs the app in the Applications folder.")
         XCTAssertNil(message?.action)
         XCTAssertNil(message?.actionTitle)
     }
