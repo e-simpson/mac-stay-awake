@@ -1,7 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 100 100">
-  <g fill="none" stroke="#BDAAF5" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M16 51C25 38 37 30 50 30S75 38 84 51C75 64 63 71 50 71S25 64 16 51Z" stroke-width="5"/>
-    <path d="M19 46C36 53 64 53 81 46" stroke-width="6"/>
-    <path d="M40 53C40 59 44 63 50 63S60 59 60 53" stroke-width="5"/>
+  <g fill="#BDAAF5">
+    <path fill-rule="evenodd" d="M16 51C25 38 37 30 50 30S75 38 84 51C75 64 63 71 50 71S25 64 16 51ZM24 53C31 62 40 67 50 67S69 62 76 53C60 58 40 58 24 53Z"/>
+    <path d="M40 55C40 61 44 65 50 65S60 61 60 55L54 56C54 59 52 60 50 60S46 59 46 56Z"/>
   </g>
 </svg>

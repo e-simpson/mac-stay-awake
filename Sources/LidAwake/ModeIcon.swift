@@ -13,7 +13,7 @@ enum ModeIcon {
     static let gridSize: CGFloat = 24
     static let strokeStyle = StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round)
     static let awakeColor = NSColor(srgbRed: 0.62745, green: 0.51765, blue: 0.90980, alpha: 1)
-    static let awakeSymbol = NSImage(systemSymbolName: "eye.half.closed", accessibilityDescription: "Stay Awake")
+    static let awakeSymbol = NSImage(systemSymbolName: "eye.half.closed.fill", accessibilityDescription: "Stay Awake")
 
     static func glyph(for mode: Mode) -> Glyph {
         switch mode {
@@ -37,7 +37,7 @@ enum ModeIcon {
         ])
         let size = NSSize(width: icon.size.width + 5 + ceil(text.size().width), height: 18)
         return NSImage(size: size, flipped: false) { _ in
-            icon.draw(in: NSRect(origin: .zero, size: icon.size))
+            icon.draw(in: NSRect(x: 0, y: (size.height - icon.size.height) / 2, width: icon.size.width, height: icon.size.height))
             text.draw(at: NSPoint(x: icon.size.width + 5, y: (size.height - text.size().height) / 2))
             return true
         }
