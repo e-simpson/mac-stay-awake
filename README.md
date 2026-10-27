@@ -2,34 +2,47 @@
   <img src="./images/icon.png" width="96" alt="MacStayAwake icon: a purple half-open eye" />
 </p>
 <h3 align="center">MacStayAwake</h3>
-<p align="center">A native mac app to keep your Mac working with the lid closed.</p>
-<p align="center">inspired by <a href="https://github.com/Vladimir-Podgornyi/LidAwake">LidAwake</a> and <a href="https://github.com/deezeddd/LidAwake-Mac">LidAwake-Mac</a></p>
+<p align="center">
+  A native mac app to keep your Mac working with the lid closed.<br/>
+  <sub>Inspired by <a href="https://github.com/Vladimir-Podgornyi/LidAwake">LidAwake</a> and <a href="https://github.com/deezeddd/LidAwake-Mac">LidAwake-Mac</a></sub>
+</p>
+
 <p align="center">
   <img src="https://img.shields.io/badge/platform-macOS-black" alt="Platform: macOS" />
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license" /></a>
   <a href="https://github.com/e-simpson/mac-stay-awake"><img src="https://img.shields.io/github/stars/e-simpson/mac-stay-awake"></a>
 </p>
 
-
 <p align="center">
-  <img src="./images/normal-light.png" width="320" alt="Normal mode with compact settings and a duration picker" />
-  <img src="./images/keep-alive-dark.png" width="320" alt="Stay Awake with countdown, battery status, and nominal thermals" />
+  <img src="./images/normal-light.png" width="49%" alt="Normal mode with compact settings and a duration picker" />
+  <img src="./images/keep-alive-dark.png" width="49%" alt="Stay Awake with countdown, battery status, and nominal thermals" />
 </p>
 
 ### Features
 
-- Keep working with the lid closed, on battery or external power
-- Dim the display and keyboard, mute audio, or enable Low Power Mode when closed
-- Set a timer or run indefinitely, with battery and thermal cutoffs
-- Automate with daily wake-ups and app watching
-  - Watch app activity to end idle sessions
-- Restore brightness and power settings when opening, stopping, or quitting
+- Mac stays awake when turned on, normal when off
+- Can change settings while closed:
+  - Low power
+  - Display & keyboard off
+  - Mute audio
+  - Lock
+- Stops when you want
+  - Optional timer or run forever
+  - When thermals get hot
+  - When battery is low
+- Automate
+  - Optional daily wake-ups
+  - Watch app activity to start/stop
 
 See [how it works and its limits](./docs/architecture/POWER_SESSIONS.md).
 
-## Build and use
+## Download
 
-Source builds are available; public notarized downloads are not. Physical compatibility and recovery testing across Macs and macOS versions is incomplete.
+Get the signed, Apple-notarized app for Apple silicon from [Releases](https://github.com/e-simpson/mac-stay-awake/releases/latest). Unzip it, move MacStayAwake to Applications, and open it.
+
+## Build yourself
+
+Physical compatibility and recovery testing across Macs and macOS versions is incomplete.
 
 1. Configure your own Developer ID Application identity using [SIGNING.md](./SIGNING.md). Production packaging deliberately refuses the default unconfigured signing team.
 2. From the repository root, build and install:
@@ -73,13 +86,17 @@ The included CI workflow runs tests and builds the inert preview. It does not si
 
 ## Uninstall
 
-Choose **Normal**, resolve any recovery message, and quit normally. Before moving the app to Trash, unregister its helper and cancel owned wake events:
+If you use wake-up alarms, disable them first and wait for any scheduling error to clear. Quit MacStayAwake normally so it restores your settings, then move it to Trash.
+
+The helper is bundled inside the app and managed by macOS through `SMAppService`; normal removal does not require a Terminal command. Its Login Items entry may take time to disappear. Scheduled wake events are separate, which is why alarms should be disabled first.
+
+For explicit helper removal or troubleshooting, run this before trashing the app:
 
 ```sh
 /Applications/MacStayAwake.app/Contents/MacOS/LidAwake --uninstall-helper
 ```
 
-Retain the app and recovery records if cleanup fails. Do not delete `/Library/Application Support/dev.personal.MacStayAwake` while recovery is pending. No sudoers grant is installed.
+If restoration fails, keep the app and recovery records until it succeeds. No sudoers grant is installed.
 
 ## License and credits
 
