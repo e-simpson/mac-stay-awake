@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import LidAwakeCore
 import SwiftUI
 
@@ -25,6 +26,21 @@ enum ModeIcon {
     /// Stay Awake keeps its lavender color; other modes follow the menu-bar appearance.
     static func menuBarImage(for mode: Mode) -> NSImage {
         menuBarImages[mode] ?? NSImage()
+    }
+
+    static func menuBarImage(for mode: Mode, countdown: String) -> NSImage {
+        let icon = menuBarImage(for: mode)
+        guard !countdown.isEmpty else { return icon }
+        let text = NSAttributedString(string: countdown, attributes: [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular),
+            .foregroundColor: awakeColor,
+        ])
+        let size = NSSize(width: icon.size.width + 5 + ceil(text.size().width), height: 18)
+        return NSImage(size: size, flipped: false) { _ in
+            icon.draw(in: NSRect(origin: .zero, size: icon.size))
+            text.draw(at: NSPoint(x: icon.size.width + 5, y: (size.height - text.size().height) / 2))
+            return true
+        }
     }
 
     private static let menuBarImages = Dictionary(uniqueKeysWithValues: Mode.allCases.map { ($0, image(for: $0, size: 18)) })
@@ -105,11 +121,47 @@ enum ModeIcon {
     }
 }
 
+@MainActor
+final class MenuBarCountdown: ObservableObject {
+    @Published private(set) var clock = ""
+    private weak var controller: ModeController?
+    private var observation: AnyCancellable?
+    private var timer: Timer?
+
+    init(controller: ModeController) {
+        self.controller = controller
+        observation = controller.objectWillChange
+            .merge(with: controller.preferences.objectWillChange)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] in self?.refresh() }
+        refresh()
+    }
+
+    private func refresh() {
+        timer?.invalidate()
+        guard let controller, controller.mode != .off, let remaining = controller.timerRemaining() else {
+            clock = ""
+            return
+        }
+        let value = DurationFormat.clock(Int(remaining.rounded(.up)))
+        if clock != value { clock = value }
+        guard remaining > 0 else { return }
+        // Wake only when the displayed minute changes.
+        let delay = remaining.truncatingRemainder(dividingBy: 60)
+        timer = Timer.scheduledTimer(withTimeInterval: max(delay, 0.1), repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refresh() }
+        }
+    }
+
+    deinit { timer?.invalidate() }
+}
+
 struct MenuBarIcon: View {
     @ObservedObject var controller: ModeController
+    @ObservedObject var countdown: MenuBarCountdown
 
     var body: some View {
-        Image(nsImage: ModeIcon.menuBarImage(for: controller.mode))
+        Image(nsImage: ModeIcon.menuBarImage(for: controller.mode, countdown: countdown.clock))
             .renderingMode(controller.mode == .lidClosed ? .original : .template)
             .accessibilityLabel(Text(verbatim: "MacStayAwake"))
             .help(controller.mode == .lidClosed ? Text("Right-click to turn Stay Awake off") : Text("Right-click to turn Stay Awake on"))

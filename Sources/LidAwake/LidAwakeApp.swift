@@ -5,6 +5,7 @@ import SwiftUI
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let helperClient: HelperClient
+    let menuBarCountdown: MenuBarCountdown
     let modeController: ModeController
     let helperSetup: HelperSetup
     let launchAtLogin = LaunchAtLogin()
@@ -64,6 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         wakeScheduler = scheduler
         sleepRecorder = SystemSleepRecorder(log: activityLog, wakeHandler: scheduler)
+        menuBarCountdown = MenuBarCountdown(controller: controller)
         modeController = controller
         helperSetup = HelperSetup(
             helper: helperClient,
@@ -156,7 +158,7 @@ struct LidAwakeApp: App {
                 }
             )
         } label: {
-            MenuBarIcon(controller: appDelegate.modeController)
+            MenuBarIcon(controller: appDelegate.modeController, countdown: appDelegate.menuBarCountdown)
         }
         .menuBarExtraStyle(.window)
     }
