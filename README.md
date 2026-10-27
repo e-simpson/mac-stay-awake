@@ -14,8 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="./images/normal-light.png" width="49%" alt="Normal mode with compact settings and a duration picker" />
-  <img src="./images/keep-alive-dark.png" width="49%" alt="Stay Awake with countdown, battery status, and nominal thermals" />
+  <img src="./images/screenshot.png" width="360" alt="MacStayAwake enabled with a purple menu-bar countdown and lid-closed settings" />
 </p>
 
 ### Features
