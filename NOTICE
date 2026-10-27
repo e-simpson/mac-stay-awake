@@ -4,8 +4,12 @@ Derived from Vladimir-Podgornyi/LidAwake at revision
 d1feb73d410dd49a685c6ff19d90d3c64bed53ff.
 https://github.com/Vladimir-Podgornyi/LidAwake
 Copyright (c) 2026 Vladimir Podgornyi
-MIT license retained in LICENSE. MacStayAwake uses its own open-ring and
-lightning-bolt application icon.
+MIT license retained in LICENSE. MacStayAwake uses its own filled-eye
+application artwork.
+
+Selected upstream improvements incorporated from revisions
+9b78b0dd5a63f80e2cbc58258d7f36c567ef2fca (sleep-request resilience) and
+6e172cb947e4fa48d18388af0d1d03351ec8900d (localized activation refusals).
 
 Brightness preservation informed by deezeddd/LidAwake-Mac at revision
 4ded7f5ded8a4c243fa0764e3e3349a71ad98598.

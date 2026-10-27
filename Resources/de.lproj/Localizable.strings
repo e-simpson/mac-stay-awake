@@ -194,3 +194,5 @@
 "High Power" = "Hohe Leistung";
 
 "Previous: %@ · Current: %@ · Target: %@" = "Vorher: %@ · Aktuell: %@ · Ziel: %@";
+
+"The battery is at %lld%%, at or below the %lld%% limit." = "Der Akkustand liegt bei %lld %% und damit an oder unter der Grenze von %lld %%.";

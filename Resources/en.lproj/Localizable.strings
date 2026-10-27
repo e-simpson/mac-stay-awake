@@ -194,3 +194,5 @@
 "High Power" = "High Power";
 
 "Previous: %@ · Current: %@ · Target: %@" = "Previous: %@ · Current: %@ · Target: %@";
+
+"The battery is at %lld%%, at or below the %lld%% limit." = "The battery is at %lld%%, at or below the %lld%% limit.";

@@ -194,3 +194,5 @@
 "High Power" = "Высокая мощность";
 
 "Previous: %@ · Current: %@ · Target: %@" = "Ранее: %@ · Сейчас: %@ · Цель: %@";
+
+"The battery is at %lld%%, at or below the %lld%% limit." = "Заряд %lld %% — на пороге %lld %% или ниже.";

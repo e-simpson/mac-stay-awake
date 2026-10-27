@@ -194,3 +194,5 @@
 "High Power" = "高功率模式";
 
 "Previous: %@ · Current: %@ · Target: %@" = "原值：%@ · 当前：%@ · 目标：%@";
+
+"The battery is at %lld%%, at or below the %lld%% limit." = "电量为 %lld%%，已达到或低于 %lld%% 的下限。";

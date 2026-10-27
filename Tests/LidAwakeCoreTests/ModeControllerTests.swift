@@ -8,6 +8,7 @@ private final class FakeAssertion: PowerAssertion {
     private(set) var releaseCount = 0
     private(set) var isHeld = false
 
+
     func acquire() throws {
         acquireCount += 1
         if shouldFail {
@@ -327,6 +328,28 @@ final class ModeControllerTests: XCTestCase {
             timerCheckSleep: { try await Task.sleep(nanoseconds: 3_600_000_000_000) },
             now: { time.now }
         )
+    }
+
+    func testRefusalNoticeTranslatesProtectionsOnly() {
+        // Run without the app bundle, the localized text is the English key, so a translated refusal
+        // differs from the helper's text only where the wording differs.
+        XCTAssertEqual(
+            RefusalNotice.text(for: HelperError.helper(.thermalLimitReached, "The Mac is too hot (thermal state critical).")),
+            "The Mac got too hot."
+        )
+        XCTAssertEqual(
+            RefusalNotice.text(for: HelperError.helper(.batteryLimitReached, "The battery is at 18%, at or below the 30% limit.")),
+            String(localized: "The battery is at \(18)%, at or below the \(30)% limit.")
+        )
+        XCTAssertEqual(
+            RefusalNotice.text(for: HelperError.helper(.batteryLimitReached, "Something else.")),
+            "Something else."
+        )
+        XCTAssertEqual(
+            RefusalNotice.text(for: HelperError.helper(.flagReadFailed, "The battery level could not be read.")),
+            "The battery level could not be read."
+        )
+        XCTAssertEqual(RefusalNotice.text(for: HelperError.timeout), HelperError.timeout.localizedDescription)
     }
 
     func testClosedLidSettingsFollowLidPreferencesAndQuitRecovery() async throws {
@@ -1479,7 +1502,7 @@ final class ModeControllerTests: XCTestCase {
         } catch {}
         XCTAssertEqual(controller.mode, .off)
         XCTAssertFalse(activity.isActive)
-        XCTAssertEqual(controller.message, .couldNotTurnOn("The Mac is too hot (thermal state serious)."))
+        XCTAssertEqual(controller.message, .couldNotTurnOn("The Mac got too hot."))
         XCTAssertEqual(notifier.posts, [])
     }
 

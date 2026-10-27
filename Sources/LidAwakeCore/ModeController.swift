@@ -339,7 +339,7 @@ public final class ModeController: ObservableObject, ScheduledModeStarting {
                 }
             }
         } catch {
-            if message == nil { message = .couldNotTurnOn(error.localizedDescription) }
+            if message == nil { message = .couldNotTurnOn(RefusalNotice.text(for: error)) }
             throw error
         }
     }
