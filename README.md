@@ -32,7 +32,7 @@
   - When battery is low
 - Automate
   - Optional daily wake-ups
-  - Watch app activity to start/stop
+  - Watch app activity to stop idle sessions
 
 See [how it works and its limits](./docs/architecture/POWER_SESSIONS.md).
 
@@ -82,7 +82,7 @@ PREVIEW_BUILD=1 scripts/build-app.sh
 
 Tests and previews do not prove physical sleep, wake, or recovery behavior. Contributions should preserve bounded power operations, app/helper authentication, and restoration guarantees. Include a focused check for changed behavior. See [SECURITY.md](./SECURITY.md) for security reports.
 
-The included CI workflow runs tests and builds the inert preview. It does not sign releases or use signing credentials. CI has not run on GitHub yet.
+The included CI workflow runs tests and builds the inert preview. It does not sign releases or use signing credentials.
 
 ## Uninstall
 
