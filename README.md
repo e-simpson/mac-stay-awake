@@ -107,7 +107,7 @@ MIT. Preserve [LICENSE](./LICENSE) and [LICENSE-BRIGHTNESS-REFERENCE](./LICENSE-
 
 Exact source revisions and copyright notices are in [NOTICE](./NOTICE). MacStayAwake is independently maintained; attribution does not imply upstream endorsement.
 
-## Agent-coded project and disclaimer
+## Disclaimer
 
 MacStayAwake is developed with AI coding agents. It may contain bugs and has not been validated on every Mac or macOS version. Use it at your own risk, monitor your Mac's temperature and battery, and keep backups.
 
