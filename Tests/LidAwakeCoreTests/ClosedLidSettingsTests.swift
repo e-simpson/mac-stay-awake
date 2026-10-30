@@ -10,11 +10,13 @@ final class ClosedLidSettingsTests: XCTestCase {
         var current: String? = "built-in"
         var values = ["built-in": 0.7]
         var unavailable: Set<String> = []
+        var disconnected: Set<String> = []
         var failAfterWrite = false
         var failBeforeWrite = false
         var writes: [(String, Double)] = []
         func currentDevice() -> String? { current }
         func read(_ device: String) throws -> Double {
+            if disconnected.contains(device) { throw ClosedLidDeviceError.disconnected }
             guard !unavailable.contains(device), let value = values[device] else { throw Failure.unavailable }
             return value
         }
@@ -27,11 +29,52 @@ final class ClosedLidSettingsTests: XCTestCase {
         }
     }
 
+    private final class FailingDefaults: UserDefaults {
+        var failsToSave = false
+        override func synchronize() -> Bool { failsToSave ? false : super.synchronize() }
+    }
+
     private let suite = "ClosedLidSettingsTests-\(UUID().uuidString)"
     private lazy var defaults = UserDefaults(suiteName: suite)!
     override func tearDown() {
         UserDefaults().removePersistentDomain(forName: suite)
         super.tearDown()
+    }
+
+    func testDisconnectedOutputIsForgottenWhileConnectedOutputRestores() {
+        let device = Device()
+        device.values = ["built-in": 0, "headphones": 0]
+        let setting = ClosedLidOverride(access: device, defaults: defaults, key: "mute", target: 1)
+        XCTAssertTrue(setting.update(enabled: true))
+        device.disconnected.insert("built-in")
+        device.current = "headphones"
+        XCTAssertTrue(setting.update(enabled: true))
+        XCTAssertEqual(device.values["headphones"], 1)
+        XCTAssertTrue(setting.update(enabled: false))
+        XCTAssertEqual(device.values["headphones"], 0)
+        XCTAssertNil(defaults.object(forKey: "mute"))
+
+        device.disconnected.remove("built-in")
+        let writes = device.writes.count
+        let relaunched = ClosedLidOverride(access: device, defaults: defaults, key: "mute", target: 1)
+        XCTAssertTrue(relaunched.update(enabled: false))
+        XCTAssertEqual(device.writes.count, writes, "A forgotten device must not be changed after reconnecting")
+        XCTAssertEqual(device.values["built-in"], 1)
+    }
+
+    func testFailedJournalDeletionKeepsBlockingUntilSaved() {
+        let store = FailingDefaults(suiteName: suite)!
+        let device = Device()
+        let setting = ClosedLidOverride(access: device, defaults: store, key: "mute", target: 1)
+        XCTAssertTrue(setting.update(enabled: true))
+        device.disconnected.insert("built-in")
+        store.failsToSave = true
+        XCTAssertFalse(setting.update(enabled: false))
+        XCTAssertNotNil(store.object(forKey: "mute"))
+        XCTAssertFalse(setting.update(enabled: false), "A failed save must not look complete on the next attempt")
+        store.failsToSave = false
+        XCTAssertTrue(setting.update(enabled: false))
+        XCTAssertNil(store.object(forKey: "mute"))
     }
 
     func testCloseRestoresOriginalAfterRelaunchWithoutRepeatingWrites() {
@@ -79,7 +122,7 @@ final class ClosedLidSettingsTests: XCTestCase {
         XCTAssertEqual(device.values["built-in"], 0)
     }
 
-    func testDisconnectedDeviceKeepsRecoveryAndStillMutesNewDevice() {
+    func testUnreadableDeviceKeepsRecoveryAndStillMutesNewDevice() {
         let device = Device()
         device.values = ["built-in": 0, "headphones": 0]
         let setting = ClosedLidOverride(access: device, defaults: defaults, key: "mute", target: 1)

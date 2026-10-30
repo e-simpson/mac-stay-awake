@@ -19,7 +19,7 @@ Daily alarms use a validated maximum-16 array of local minutes, introduced in pr
 
 Selecting a duration explicitly resets the active countdown, even for the same choice; Infinite removes the timer. Protocol 17 resets only an active session’s timer and monotonic origin, preserving its lease and power state. Expired sessions cannot be restarted by changing the duration. Other settings retain the original countdown. In Normal, choosing a duration only saves the next session’s setting.
 
-Mute applies to the default audio output and tracks it by its stable Core Audio device UID. The display-off option also dims the built-in keyboard backlight through macOS's private CoreBrightness interface when available. Each original value is saved before it is changed and restored on open, stop, quit, or the next launch after interruption; observable external changes are preserved. A disconnected device can leave recovery pending until it reconnects. Unsupported controls report an error rather than inventing an original value.
+Mute applies to the default audio output and tracks it by its stable Core Audio device UID. The display-off option also dims the built-in keyboard backlight through macOS's private CoreBrightness interface when available. Each original value is saved before it is changed and restored on open, stop, quit, or the next launch after interruption; observable external changes are preserved. Saved mute settings for confirmed-disconnected audio outputs are discarded, so they do not block quitting or get applied to another output. Read, write, and persistence failures for connected devices still keep recovery pending. Unsupported controls report an error rather than inventing an original value.
 
 ## Operating limits
 

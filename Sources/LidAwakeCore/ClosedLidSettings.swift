@@ -11,7 +11,7 @@ protocol ClosedLidDeviceAccess {
     func write(_ device: String, value: Double) throws
 }
 
-private enum ClosedLidDeviceError: Error { case unavailable }
+enum ClosedLidDeviceError: Error { case unavailable, disconnected }
 
 /// Persists each original value before writing; never overwrites a visible external change.
 @MainActor
@@ -92,6 +92,12 @@ final class ClosedLidOverride {
                 }
                 saved.removeValue(forKey: device)
                 if !save(saved) { return false }
+            } catch ClosedLidDeviceError.disconnected {
+                // A disconnected accessory cannot be restored; do not retain ownership of it.
+                saved.removeValue(forKey: device)
+                guard save(saved) else { return false }
+                seen.remove(device)
+                record(.restore, .failed, target: entry.original)
             } catch { record(.restore, .pending, target: entry.original); ok = false }
         }
         if !enabled { seen.removeAll(); return ok && saved.isEmpty }
@@ -150,10 +156,18 @@ final class ClosedLidOverride {
         report(operation, outcome, prior, current, target)
     }
     private func save(_ saved: [String: Saved]) -> Bool {
+        let previous = defaults.object(forKey: key)
         if saved.isEmpty { defaults.removeObject(forKey: key) }
         else if let data = try? JSONEncoder().encode(saved) { defaults.set(data, forKey: key) }
         else { return false }
-        return defaults.synchronize()
+        guard defaults.synchronize() else {
+            // A failed deletion must not look complete on the next recovery attempt.
+            if let previous { defaults.set(previous, forKey: key) }
+            else { defaults.removeObject(forKey: key) }
+            _ = defaults.synchronize()
+            return false
+        }
+        return true
     }
 }
 
@@ -239,9 +253,12 @@ private struct SystemOutputMute: ClosedLidDeviceAccess {
         let system = AudioObjectID(kAudioObjectSystemObject)
         guard AudioObjectGetPropertyDataSize(system, &address, 0, nil, &size) == noErr else { throw ClosedLidDeviceError.unavailable }
         var devices = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
-        guard !devices.isEmpty, AudioObjectGetPropertyData(system, &address, 0, nil, &size, &devices) == noErr,
-              let device = devices.first(where: { self.uid($0) == uid }) else { throw ClosedLidDeviceError.unavailable }
-        return device
+        guard !devices.isEmpty,
+              AudioObjectGetPropertyData(system, &address, 0, nil, &size, &devices) == noErr else { throw ClosedLidDeviceError.unavailable }
+        let identities = devices.map { (device: $0, uid: self.uid($0)) }
+        if let match = identities.first(where: { $0.uid == uid }) { return match.device }
+        guard identities.allSatisfy({ $0.uid != nil }) else { throw ClosedLidDeviceError.unavailable }
+        throw ClosedLidDeviceError.disconnected
     }
 }
 
