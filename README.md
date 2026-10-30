@@ -106,3 +106,9 @@ MIT. Preserve [LICENSE](./LICENSE) and [LICENSE-BRIGHTNESS-REFERENCE](./LICENSE-
 - [deezeddd/LidAwake-Mac](https://github.com/deezeddd/LidAwake-Mac): brightness-preservation reference.
 
 Exact source revisions and copyright notices are in [NOTICE](./NOTICE). MacStayAwake is independently maintained; attribution does not imply upstream endorsement.
+
+## Agent-coded project and disclaimer
+
+MacStayAwake is developed with AI coding agents. It may contain bugs and has not been validated on every Mac or macOS version. Use it at your own risk, monitor your Mac's temperature and battery, and keep backups.
+
+The software is provided "as is", without warranty. To the extent permitted by applicable law, the authors and copyright holders are not liable for claims, damages or losses arising from its use, including data loss, hardware damage or interrupted work. See the [MIT License](./LICENSE).
