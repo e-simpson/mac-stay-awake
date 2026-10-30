@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./images/icon.png" width="96" alt="MacStayAwake icon: a purple half-open eye" />
+  <img src="./images/screenshot.png" width="360" alt="MacStayAwake enabled with a purple menu-bar countdown and lid-closed settings" />
 </p>
 <h3 align="center">MacStayAwake</h3>
 <p align="center">
@@ -11,10 +11,6 @@
   <img src="https://img.shields.io/badge/platform-macOS-black" alt="Platform: macOS" />
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license" /></a>
   <a href="https://github.com/e-simpson/mac-stay-awake"><img src="https://img.shields.io/github/stars/e-simpson/mac-stay-awake"></a>
-</p>
-
-<p align="center">
-  <img src="./images/screenshot.png" width="360" alt="MacStayAwake enabled with a purple menu-bar countdown and lid-closed settings" />
 </p>
 
 ### Features
