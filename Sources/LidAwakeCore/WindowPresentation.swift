@@ -40,7 +40,7 @@ public enum StatusLine {
             default: healthy = false
             }
         }
-        return (String(localized: "Status: \(detail)"), healthy)
+        return (detail, healthy)
     }
 
     /// The active mode subtitle; nil when there is nothing to show.

@@ -7,7 +7,6 @@
 "For the road. Keeps working with the lid shut or the screen locked." = "适合外出时使用。合上屏幕或锁屏后，Mac 仍会继续运行。";
 
 /* Status line */
-"Status: %@" = "状态：%@";
 "Starting" = "正在启动";
 "On" = "开启";
 "%@ left" = "剩余 %@";

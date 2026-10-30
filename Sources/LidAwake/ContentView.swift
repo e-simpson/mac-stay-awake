@@ -134,7 +134,6 @@ struct ContentView: View {
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .controlSize(.small)
-                    .tint(.green)
                 }
                 .disabled(controller.isBusy || controller.isQuitting)
                 Text(status.text)

@@ -7,7 +7,6 @@
 "For the road. Keeps working with the lid shut or the screen locked." = "В дорогу. Mac работает с закрытой крышкой и при заблокированном экране.";
 
 /* Status line */
-"Status: %@" = "Состояние: %@";
 "Starting" = "Запуск";
 "On" = "Вкл.";
 "%@ left" = "осталось %@";

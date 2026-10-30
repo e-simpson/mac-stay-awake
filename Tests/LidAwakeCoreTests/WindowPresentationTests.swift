@@ -13,10 +13,10 @@ final class StatusLineTests: XCTestCase {
             StatusLine.header(mode: mode, isStarting: starting, isPaused: paused, hasWarning: warning,
                               power: power ?? battery, showsBattery: showsBattery, batteryLimit: limit, thermal: thermal)
         }
-        XCTAssertEqual(header(.off).text, "Status: Off")
+        XCTAssertEqual(header(.off).text, "Off")
         XCTAssertFalse(header(.off).healthy)
-        XCTAssertEqual(header(.off, starting: true).text, "Status: Starting")
-        XCTAssertEqual(header().text, "Status: Battery 82% · Nominal thermals")
+        XCTAssertEqual(header(.off, starting: true).text, "Starting")
+        XCTAssertEqual(header().text, "Battery 82% · Nominal thermals")
         XCTAssertTrue(header().healthy)
         XCTAssertFalse(header(paused: true).healthy)
         XCTAssertFalse(header(warning: true).healthy)
@@ -25,7 +25,7 @@ final class StatusLineTests: XCTestCase {
         XCTAssertFalse(header(power: PowerReading(battery: .percent(20), source: .battery)).healthy)
         XCTAssertFalse(header(power: PowerReading(battery: .unknown, source: .battery)).healthy)
         XCTAssertTrue(header(power: PowerReading(battery: .percent(10), source: .ac)).healthy)
-        XCTAssertEqual(header(limit: nil, thermal: nil, showsBattery: false).text, "Status: On")
+        XCTAssertEqual(header(limit: nil, thermal: nil, showsBattery: false).text, "On")
     }
 
     func testOffShowsNothing() {
