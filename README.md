@@ -4,7 +4,7 @@
 <h3 align="center">MacStayAwake</h3>
 <p align="center">
   A native mac app to keep your Mac working with the lid closed.<br/>
-  <sub>Inspired by <a href="https://github.com/Vladimir-Podgornyi/LidAwake">LidAwake</a> and <a href="https://github.com/deezeddd/LidAwake-Mac">LidAwake-Mac</a></sub>
+  <sub>Inspired by/forked <a href="https://github.com/Vladimir-Podgornyi/LidAwake">LidAwake</a> and <a href="https://github.com/deezeddd/LidAwake-Mac">LidAwake-Mac</a></sub>
 </p>
 
 <p align="center">
@@ -20,6 +20,7 @@
 ### Features
 
 - Mac stays awake when turned on, normal when off
+- Right click menu bar icon to quick toggle
 - Can change settings while closed:
   - Low power
   - Display & keyboard off
